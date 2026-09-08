@@ -1,0 +1,287 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Organizations & Locations ──────────────────────────────
+
+model Organization {
+  id        String     @id @default(uuid())
+  name      String
+  timezone  String     @default("UTC")
+  createdAt DateTime   @default(now()) @map("created_at")
+  locations Location[]
+  roles     Role[]
+
+  @@map("organizations")
+}
+
+model Location {
+  id        String   @id @default(uuid())
+  orgId     String   @map("org_id")
+  name      String
+  timezone  String
+  address   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  organization    Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  positions       Position[]
+  shifts          Shift[]
+  timeEntries     TimeEntry[]
+  timeOffRequests TimeOffRequest[]
+  recurrenceRules RecurrenceRule[]
+
+  @@index([orgId])
+  @@map("locations")
+}
+
+// ─── Users & RBAC ────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String?  @map("password_hash")
+  googleId     String?  @unique @map("google_id")
+  fullName     String   @map("full_name")
+  phone        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  userRoles         UserRole[]
+  employeePositions EmployeePosition[]
+  shiftsAssigned    Shift[]            @relation("AssignedShifts")
+  shiftsCreated     Shift[]            @relation("CreatedShifts")
+  timeEntries       TimeEntry[]
+  swapRequestsMade  ShiftSwapRequest[] @relation("RequestingUser")
+  swapRequestsCover ShiftSwapRequest[] @relation("CoveringUser")
+  timeOffRequests   TimeOffRequest[]
+
+  @@map("users")
+}
+
+model Role {
+  id           String   @id @default(uuid())
+  orgId        String   @map("org_id")
+  name         String
+  isSystemRole Boolean  @default(false) @map("is_system_role")
+
+  organization    Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  @@unique([orgId, name])
+  @@map("roles")
+}
+
+model Permission {
+  id              Int              @id @default(autoincrement())
+  key             String           @unique
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id")
+  permissionId Int    @map("permission_id")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+enum ScopeType {
+  organization
+  location
+}
+
+model UserRole {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  roleId    String    @map("role_id")
+  scopeType ScopeType @map("scope_type")
+  scopeId   String    @map("scope_id")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId, scopeType, scopeId])
+  @@index([userId, scopeType, scopeId])
+  @@map("user_roles")
+}
+
+// ─── Scheduling domain ───────────────────────────────────────
+
+model Position {
+  id         String  @id @default(uuid())
+  locationId String  @map("location_id")
+  name       String
+  hourlyRate Decimal? @map("hourly_rate") @db.Decimal(10, 2)
+
+  location          Location           @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  employeePositions EmployeePosition[]
+  shifts            Shift[]
+  recurrenceRules   RecurrenceRule[]
+
+  @@map("positions")
+}
+
+model EmployeePosition {
+  userId     String @map("user_id")
+  positionId String @map("position_id")
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  position Position @relation(fields: [positionId], references: [id], onDelete: Cascade)
+
+  @@id([userId, positionId])
+  @@map("employee_positions")
+}
+
+enum ShiftStatus {
+  scheduled
+  published
+  completed
+  cancelled
+}
+
+model Shift {
+  id             String      @id @default(uuid())
+  locationId     String      @map("location_id")
+  positionId     String?     @map("position_id")
+  assignedUserId String?     @map("assigned_user_id")
+  startTime      DateTime    @map("start_time")
+  endTime        DateTime    @map("end_time")
+  status         ShiftStatus @default(scheduled)
+  recurrenceId   String?     @map("recurrence_id")
+  createdBy      String      @map("created_by")
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  location     Location           @relation(fields: [locationId], references: [id])
+  position     Position?          @relation(fields: [positionId], references: [id])
+  assignedUser User?              @relation("AssignedShifts", fields: [assignedUserId], references: [id])
+  creator      User               @relation("CreatedShifts", fields: [createdBy], references: [id])
+  timeEntries  TimeEntry[]
+  swapRequests ShiftSwapRequest[]
+
+  @@index([locationId, startTime, endTime])
+  @@index([assignedUserId, startTime])
+  @@map("shifts")
+}
+
+model RecurrenceRule {
+  id                String   @id @default(uuid())
+  locationId        String   @map("location_id")
+  rrule             String
+  templateStartTime String   @map("template_start_time") // stored as "HH:MM"
+  templateEndTime   String   @map("template_end_time")
+  positionId        String?  @map("position_id")
+  activeUntil       DateTime? @map("active_until") @db.Date
+
+  location Location  @relation(fields: [locationId], references: [id])
+  position Position? @relation(fields: [positionId], references: [id])
+
+  @@map("recurrence_rules")
+}
+
+// ─── Swap / time-off requests ────────────────────────────────
+
+enum SwapStatus {
+  pending
+  approved
+  denied
+  cancelled
+}
+
+model ShiftSwapRequest {
+  id                      String     @id @default(uuid())
+  shiftId                 String     @map("shift_id")
+  requestingUserId        String     @map("requesting_user_id")
+  coveringUserId          String?    @map("covering_user_id")
+  status                  SwapStatus @default(pending)
+  requiresManagerApproval Boolean    @default(true) @map("requires_manager_approval")
+  approvedBy              String?    @map("approved_by")
+  createdAt               DateTime   @default(now()) @map("created_at")
+  resolvedAt              DateTime?  @map("resolved_at")
+
+  shift          Shift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  requestingUser User  @relation("RequestingUser", fields: [requestingUserId], references: [id])
+  coveringUser   User? @relation("CoveringUser", fields: [coveringUserId], references: [id])
+
+  @@index([status])
+  @@map("shift_swap_requests")
+}
+
+enum TimeOffStatus {
+  pending
+  approved
+  denied
+}
+
+model TimeOffRequest {
+  id         String        @id @default(uuid())
+  userId     String        @map("user_id")
+  locationId String        @map("location_id")
+  startDate  DateTime      @map("start_date") @db.Date
+  endDate    DateTime      @map("end_date") @db.Date
+  status     TimeOffStatus @default(pending)
+  reason     String?
+  reviewedBy String?       @map("reviewed_by")
+  createdAt  DateTime      @default(now()) @map("created_at")
+
+  user     User     @relation(fields: [userId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+
+  @@map("time_off_requests")
+}
+
+// ─── Time & attendance ───────────────────────────────────────
+
+enum EntrySource {
+  app
+  manual
+  import
+}
+
+model TimeEntry {
+  id               String      @id @default(uuid())
+  shiftId          String?     @map("shift_id")
+  userId           String      @map("user_id")
+  locationId       String      @map("location_id")
+  clockIn          DateTime    @map("clock_in")
+  clockOut         DateTime?   @map("clock_out")
+  clockInLat       Decimal?    @map("clock_in_lat") @db.Decimal(9, 6)
+  clockInLng       Decimal?    @map("clock_in_lng") @db.Decimal(9, 6)
+  clockInVerified  Boolean     @default(false) @map("clock_in_verified")
+  createdVia       EntrySource @default(app) @map("created_via")
+  syncedAt         DateTime?   @map("synced_at")
+
+  shift    Shift?   @relation(fields: [shiftId], references: [id])
+  user     User     @relation(fields: [userId], references: [id])
+  location Location @relation(fields: [locationId], references: [id])
+
+  @@index([userId, clockIn])
+  @@map("time_entries")
+}
+
+// ─── Audit log ────────────────────────────────────────────────
+
+model AuditLog {
+  id           BigInt   @id @default(autoincrement())
+  orgId        String   @map("org_id")
+  userId       String   @map("user_id")
+  action       String
+  resourceType String   @map("resource_type")
+  resourceId   String?  @map("resource_id")
+  metadata     Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([resourceType, resourceId])
+  @@index([orgId, createdAt(sort: Desc)])
+  @@map("audit_log")
+}
