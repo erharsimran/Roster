@@ -16,6 +16,7 @@ model Organization {
   createdAt DateTime   @default(now()) @map("created_at")
   locations Location[]
   roles     Role[]
+  positions Position[]
 
   @@map("organizations")
 }
@@ -28,8 +29,7 @@ model Location {
   address   String?
   createdAt DateTime @default(now()) @map("created_at")
 
-  organization    Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  positions       Position[]
+  organization    Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   shifts          Shift[]
   timeEntries     TimeEntry[]
   timeOffRequests TimeOffRequest[]
@@ -119,16 +119,17 @@ model UserRole {
 // ─── Scheduling domain ───────────────────────────────────────
 
 model Position {
-  id         String  @id @default(uuid())
-  locationId String  @map("location_id")
+  id         String   @id @default(uuid())
+  orgId      String   @map("org_id")
   name       String
   hourlyRate Decimal? @map("hourly_rate") @db.Decimal(10, 2)
 
-  location          Location           @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  organization      Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   employeePositions EmployeePosition[]
   shifts            Shift[]
   recurrenceRules   RecurrenceRule[]
 
+  @@index([orgId])
   @@map("positions")
 }
 

@@ -3,7 +3,8 @@ import { ConfigModule } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import { AuthModule } from './modules/auth/auth.module';
 import { SchedulingModule } from './modules/scheduling/scheduling.module';
-
+import { OrganizationModule } from './modules/organization/organization.module';
+import { PositionsModule } from './modules/positions/positions.module';
 @Module({
   imports: [
     BullModule.forRoot({
@@ -14,6 +15,8 @@ import { SchedulingModule } from './modules/scheduling/scheduling.module';
     }),
     AuthModule,
     SchedulingModule,
+    OrganizationModule,
+    PositionsModule,
     // TimeAttendanceModule, MessagingModule, AuthModule to follow the same pattern —
     // scaffold those next once this module is verified end-to-end.
   ],
