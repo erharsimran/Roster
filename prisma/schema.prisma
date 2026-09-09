@@ -18,6 +18,7 @@ model Organization {
   roles       Role[]
   positions   Position[]
   shiftTrades ShiftTrade[]
+  TimeEntry   TimeEntry[]
 
   @@map("organizations")
 }
@@ -28,6 +29,9 @@ model Location {
   name                    String
   timezone                String
   address                 String?
+  latitude                Float?
+  longitude               Float?
+  geofenceRadiusMeters    Int      @default(150) @map("geofence_radius_meters")
   operatingHours          Json?    @map("operating_hours")
   requireLeadershipOnDuty Boolean  @default(false) @map("require_leadership_on_duty")
   createdAt               DateTime @default(now()) @map("created_at")
@@ -234,27 +238,6 @@ enum EntrySource {
   import
 }
 
-model TimeEntry {
-  id              String      @id @default(uuid())
-  shiftId         String?     @map("shift_id")
-  userId          String      @map("user_id")
-  locationId      String      @map("location_id")
-  clockIn         DateTime    @map("clock_in")
-  clockOut        DateTime?   @map("clock_out")
-  clockInLat      Decimal?    @map("clock_in_lat") @db.Decimal(9, 6)
-  clockInLng      Decimal?    @map("clock_in_lng") @db.Decimal(9, 6)
-  clockInVerified Boolean     @default(false) @map("clock_in_verified")
-  createdVia      EntrySource @default(app) @map("created_via")
-  syncedAt        DateTime?   @map("synced_at")
-
-  shift    Shift?   @relation(fields: [shiftId], references: [id])
-  user     User     @relation(fields: [userId], references: [id])
-  location Location @relation(fields: [locationId], references: [id])
-
-  @@index([userId, clockIn])
-  @@map("time_entries")
-}
-
 // ─── Audit log ────────────────────────────────────────────────
 
 model AuditLog {
@@ -309,4 +292,42 @@ model ShiftTrade {
   @@index([orgId, status])
   @@index([shiftId])
   @@map("shift_trades")
+}
+
+enum TimeEntryStatus {
+  active
+  completed
+  flagged
+  approved
+}
+
+model TimeEntry {
+  id               String          @id @default(uuid())
+  orgId            String          @map("org_id")
+  locationId       String          @map("location_id")
+  userId           String          @map("user_id")
+  shiftId          String?         @map("shift_id")
+  clockIn          DateTime        @map("clock_in")
+  clockOut         DateTime?       @map("clock_out")
+  clockInLat       Float           @map("clock_in_lat")
+  clockInLng       Float           @map("clock_in_lng")
+  clockOutLat      Float?          @map("clock_out_lat")
+  clockOutLng      Float?          @map("clock_out_lng")
+  clockInDistance  Float           @map("clock_in_distance") // Distance in meters from location pin
+  clockOutDistance Float?          @map("clock_out_distance")
+  status           TimeEntryStatus @default(active)
+  varianceMinutes  Int             @default(0) @map("variance_minutes") // Deviation from scheduled shift start
+  notes            String?
+  reviewedBy       String?         @map("reviewed_by")
+  reviewedAt       DateTime?       @map("reviewed_at")
+  createdAt        DateTime        @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  location     Location     @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shift        Shift?       @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+
+  @@index([locationId, clockIn])
+  @@index([userId, status])
+  @@map("time_entries")
 }

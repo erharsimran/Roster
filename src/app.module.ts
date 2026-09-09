@@ -6,6 +6,7 @@ import { PositionsModule } from './modules/positions/positions.module';
 import { EmployeesModule } from './modules/employees/employees.module';
 import { SchedulingModule } from './modules/scheduling/scheduling.module';
 import { PrismaService } from './prisma.service';
+import { TimeTrackingModule } from './modules/time-tracking/time-tracking.module';
 
 @Module({
   imports: [
@@ -17,9 +18,11 @@ import { PrismaService } from './prisma.service';
     PositionsModule,
     EmployeesModule,
     SchedulingModule,
+    TimeTrackingModule,
   ],
   controllers: [],
   providers: [PrismaService],
   exports: [PrismaService],
+
 })
 export class AppModule { }
