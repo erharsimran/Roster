@@ -10,24 +10,27 @@ datasource db {
 // ─── Organizations & Locations ──────────────────────────────
 
 model Organization {
-  id        String     @id @default(uuid())
-  name      String
-  timezone  String     @default("UTC")
-  createdAt DateTime   @default(now()) @map("created_at")
-  locations Location[]
-  roles     Role[]
-  positions Position[]
+  id          String       @id @default(uuid())
+  name        String
+  timezone    String       @default("UTC")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  locations   Location[]
+  roles       Role[]
+  positions   Position[]
+  shiftTrades ShiftTrade[]
 
   @@map("organizations")
 }
 
 model Location {
-  id        String   @id @default(uuid())
-  orgId     String   @map("org_id")
-  name      String
-  timezone  String
-  address   String?
-  createdAt DateTime @default(now()) @map("created_at")
+  id                      String   @id @default(uuid())
+  orgId                   String   @map("org_id")
+  name                    String
+  timezone                String
+  address                 String?
+  operatingHours          Json?    @map("operating_hours")
+  requireLeadershipOnDuty Boolean  @default(false) @map("require_leadership_on_duty")
+  createdAt               DateTime @default(now()) @map("created_at")
 
   organization    Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   shifts          Shift[]
@@ -55,18 +58,18 @@ model User {
   shiftsAssigned    Shift[]            @relation("AssignedShifts")
   shiftsCreated     Shift[]            @relation("CreatedShifts")
   timeEntries       TimeEntry[]
-  swapRequestsMade  ShiftSwapRequest[] @relation("RequestingUser")
-  swapRequestsCover ShiftSwapRequest[] @relation("CoveringUser")
+  initiatedTrades   ShiftTrade[]       @relation("TradeSourceUser")
+  receivedTrades    ShiftTrade[]       @relation("TradeTargetUser")
   timeOffRequests   TimeOffRequest[]
 
   @@map("users")
 }
 
 model Role {
-  id           String   @id @default(uuid())
-  orgId        String   @map("org_id")
+  id           String  @id @default(uuid())
+  orgId        String  @map("org_id")
   name         String
-  isSystemRole Boolean  @default(false) @map("is_system_role")
+  isSystemRole Boolean @default(false) @map("is_system_role")
 
   organization    Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   rolePermissions RolePermission[]
@@ -119,10 +122,11 @@ model UserRole {
 // ─── Scheduling domain ───────────────────────────────────────
 
 model Position {
-  id         String   @id @default(uuid())
-  orgId      String   @map("org_id")
-  name       String
-  hourlyRate Decimal? @map("hourly_rate") @db.Decimal(10, 2)
+  id           String   @id @default(uuid())
+  orgId        String   @map("org_id")
+  name         String
+  hourlyRate   Decimal? @map("hourly_rate") @db.Decimal(10, 2)
+  isLeadership Boolean  @default(false) @map("is_leadership")
 
   organization      Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   employeePositions EmployeePosition[]
@@ -163,12 +167,12 @@ model Shift {
   createdBy      String      @map("created_by")
   createdAt      DateTime    @default(now()) @map("created_at")
 
-  location     Location           @relation(fields: [locationId], references: [id])
-  position     Position?          @relation(fields: [positionId], references: [id])
-  assignedUser User?              @relation("AssignedShifts", fields: [assignedUserId], references: [id])
-  creator      User               @relation("CreatedShifts", fields: [createdBy], references: [id])
+  location     Location     @relation(fields: [locationId], references: [id])
+  position     Position?    @relation(fields: [positionId], references: [id])
+  assignedUser User?        @relation("AssignedShifts", fields: [assignedUserId], references: [id])
+  creator      User         @relation("CreatedShifts", fields: [createdBy], references: [id])
   timeEntries  TimeEntry[]
-  swapRequests ShiftSwapRequest[]
+  trades       ShiftTrade[] @relation("SourceShift")
 
   @@index([locationId, startTime, endTime])
   @@index([assignedUserId, startTime])
@@ -176,12 +180,12 @@ model Shift {
 }
 
 model RecurrenceRule {
-  id                String   @id @default(uuid())
-  locationId        String   @map("location_id")
+  id                String    @id @default(uuid())
+  locationId        String    @map("location_id")
   rrule             String
-  templateStartTime String   @map("template_start_time") // stored as "HH:MM"
-  templateEndTime   String   @map("template_end_time")
-  positionId        String?  @map("position_id")
+  templateStartTime String    @map("template_start_time") // stored as "HH:MM"
+  templateEndTime   String    @map("template_end_time")
+  positionId        String?   @map("position_id")
   activeUntil       DateTime? @map("active_until") @db.Date
 
   location Location  @relation(fields: [locationId], references: [id])
@@ -197,25 +201,6 @@ enum SwapStatus {
   approved
   denied
   cancelled
-}
-
-model ShiftSwapRequest {
-  id                      String     @id @default(uuid())
-  shiftId                 String     @map("shift_id")
-  requestingUserId        String     @map("requesting_user_id")
-  coveringUserId          String?    @map("covering_user_id")
-  status                  SwapStatus @default(pending)
-  requiresManagerApproval Boolean    @default(true) @map("requires_manager_approval")
-  approvedBy              String?    @map("approved_by")
-  createdAt               DateTime   @default(now()) @map("created_at")
-  resolvedAt              DateTime?  @map("resolved_at")
-
-  shift          Shift @relation(fields: [shiftId], references: [id], onDelete: Cascade)
-  requestingUser User  @relation("RequestingUser", fields: [requestingUserId], references: [id])
-  coveringUser   User? @relation("CoveringUser", fields: [coveringUserId], references: [id])
-
-  @@index([status])
-  @@map("shift_swap_requests")
 }
 
 enum TimeOffStatus {
@@ -250,17 +235,17 @@ enum EntrySource {
 }
 
 model TimeEntry {
-  id               String      @id @default(uuid())
-  shiftId          String?     @map("shift_id")
-  userId           String      @map("user_id")
-  locationId       String      @map("location_id")
-  clockIn          DateTime    @map("clock_in")
-  clockOut         DateTime?   @map("clock_out")
-  clockInLat       Decimal?    @map("clock_in_lat") @db.Decimal(9, 6)
-  clockInLng       Decimal?    @map("clock_in_lng") @db.Decimal(9, 6)
-  clockInVerified  Boolean     @default(false) @map("clock_in_verified")
-  createdVia       EntrySource @default(app) @map("created_via")
-  syncedAt         DateTime?   @map("synced_at")
+  id              String      @id @default(uuid())
+  shiftId         String?     @map("shift_id")
+  userId          String      @map("user_id")
+  locationId      String      @map("location_id")
+  clockIn         DateTime    @map("clock_in")
+  clockOut        DateTime?   @map("clock_out")
+  clockInLat      Decimal?    @map("clock_in_lat") @db.Decimal(9, 6)
+  clockInLng      Decimal?    @map("clock_in_lng") @db.Decimal(9, 6)
+  clockInVerified Boolean     @default(false) @map("clock_in_verified")
+  createdVia      EntrySource @default(app) @map("created_via")
+  syncedAt        DateTime?   @map("synced_at")
 
   shift    Shift?   @relation(fields: [shiftId], references: [id])
   user     User     @relation(fields: [userId], references: [id])
@@ -285,4 +270,43 @@ model AuditLog {
   @@index([resourceType, resourceId])
   @@index([orgId, createdAt(sort: Desc)])
   @@map("audit_log")
+}
+
+// ─── Shift Trade feature ────────────────────────────────────────────────
+enum TradeType {
+  swap
+  drop
+}
+
+enum TradeStatus {
+  pending_peer
+  pending_manager
+  approved
+  rejected
+  cancelled
+}
+
+model ShiftTrade {
+  id              String      @id @default(uuid())
+  orgId           String      @map("org_id")
+  shiftId         String      @map("shift_id")
+  sourceUserId    String      @map("source_user_id")
+  targetUserId    String?     @map("target_user_id") // Nullable if dropping to open marketplace
+  targetShiftId   String?     @map("target_shift_id") // Nullable if dropping without reciprocal swap
+  type            TradeType
+  status          TradeStatus @default(pending_manager)
+  managerApproved Boolean?    @map("manager_approved")
+  reviewedBy      String?     @map("reviewed_by")
+  reviewedAt      DateTime?   @map("reviewed_at")
+  reason          String?
+  createdAt       DateTime    @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  shift        Shift        @relation("SourceShift", fields: [shiftId], references: [id], onDelete: Cascade)
+  sourceUser   User         @relation("TradeSourceUser", fields: [sourceUserId], references: [id], onDelete: Cascade)
+  targetUser   User?        @relation("TradeTargetUser", fields: [targetUserId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, status])
+  @@index([shiftId])
+  @@map("shift_trades")
 }
