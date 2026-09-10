@@ -1,6 +1,7 @@
-import { Controller, Get, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Req, Res, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
+import { Response } from 'express';
 import { AuthService } from './auth.service';
 
 @ApiTags('Auth')
@@ -22,12 +23,18 @@ export class AuthController {
     @UseGuards(AuthGuard('google'))
     @ApiOperation({
         summary: 'Google OAuth callback handler',
-        description: 'Receives Google callback code, creates/links user, and returns JWT.',
-    })
-    @ApiResponse({ status: 200, description: 'JWT authentication payload returned.' })
-    async googleAuthRedirect(@Req() req: any) {
-        return this.authService.validateGoogleUser(req.user);
-    }
+      description: 'Receives Google callback code, creates/links user, and redirects to web app.',
+  })
+  @ApiResponse({ status: 302, description: 'Redirects to frontend auth callback.' })
+  async googleAuthRedirect(@Req() req: any, @Res() res: Response) {
+      const authResult = await this.authService.validateGoogleUser(req.user);
+
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+      const token = authResult.accessToken;
+      const user = encodeURIComponent(JSON.stringify(authResult.user));
+
+      return res.redirect(`${frontendUrl}/auth/callback?token=${token}&user=${user}`);
+  }
 
     @Get('me')
     @UseGuards(AuthGuard('jwt'))

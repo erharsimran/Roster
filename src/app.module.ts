@@ -8,7 +8,10 @@ import { SchedulingModule } from './modules/scheduling/scheduling.module';
 import { PrismaService } from './prisma.service';
 import { TimeTrackingModule } from './modules/time-tracking/time-tracking.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
-
+import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { PayrollModule } from './modules/payroll/payroll.module';
+import { CronModule } from './modules/cron/cron.module';
+import { RealtimeModule } from './modules/realtime/realtime.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -21,6 +24,10 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     SchedulingModule,
     TimeTrackingModule,
     NotificationsModule,
+    AnalyticsModule,
+    PayrollModule,
+    CronModule,
+    RealtimeModule,
   ],
   controllers: [],
   providers: [PrismaService],

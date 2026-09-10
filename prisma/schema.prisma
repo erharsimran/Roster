@@ -160,23 +160,23 @@ enum ShiftStatus {
 }
 
 model Shift {
-  id             String      @id @default(uuid())
-  locationId     String      @map("location_id")
-  positionId     String?     @map("position_id")
-  assignedUserId String?     @map("assigned_user_id")
-  startTime      DateTime    @map("start_time")
-  endTime        DateTime    @map("end_time")
-  status         ShiftStatus @default(scheduled)
-  recurrenceId   String?     @map("recurrence_id")
-  createdBy      String      @map("created_by")
-  createdAt      DateTime    @default(now()) @map("created_at")
-
-  location     Location     @relation(fields: [locationId], references: [id])
-  position     Position?    @relation(fields: [positionId], references: [id])
-  assignedUser User?        @relation("AssignedShifts", fields: [assignedUserId], references: [id])
-  creator      User         @relation("CreatedShifts", fields: [createdBy], references: [id])
-  timeEntries  TimeEntry[]
-  trades       ShiftTrade[] @relation("SourceShift")
+  id             String       @id @default(uuid())
+  locationId     String       @map("location_id")
+  positionId     String?      @map("position_id")
+  assignedUserId String?      @map("assigned_user_id")
+  startTime      DateTime     @map("start_time")
+  endTime        DateTime     @map("end_time")
+  status         ShiftStatus  @default(scheduled)
+  recurrenceId   String?      @map("recurrence_id")
+  createdBy      String       @map("created_by")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  reminderSent   Boolean      @default(false) @map("reminder_sent")
+  location       Location     @relation(fields: [locationId], references: [id])
+  position       Position?    @relation(fields: [positionId], references: [id])
+  assignedUser   User?        @relation("AssignedShifts", fields: [assignedUserId], references: [id])
+  creator        User         @relation("CreatedShifts", fields: [createdBy], references: [id])
+  timeEntries    TimeEntry[]
+  trades         ShiftTrade[] @relation("SourceShift")
 
   @@index([locationId, startTime, endTime])
   @@index([assignedUserId, startTime])

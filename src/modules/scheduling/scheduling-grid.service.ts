@@ -16,6 +16,8 @@ import {
     UpdateLocationOperatingHoursDto,
     QuickDropShiftDto,
 } from './dto/schedule-grid.dto';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { RealtimeEvent } from '../realtime/realtime.constants';
 
 interface TimeInterval {
     start: number;
@@ -34,7 +36,10 @@ export interface CoverageGap {
 export class SchedulingGridService {
     private readonly logger = new Logger(SchedulingGridService.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly realtimeGateway: RealtimeGateway,
+    ) { }
 
     private async assertLocationAccess(userId: string, locationId: string) {
         const location = await this.prisma.location.findUnique({
@@ -341,7 +346,7 @@ export class SchedulingGridService {
             throw new ConflictException(`User already has a shift at "${conflict.location.name}" during this time`);
         }
 
-        return this.prisma.shift.create({
+        const createdShift = this.prisma.shift.create({
             data: {
                 locationId,
                 assignedUserId: dto.userId,
@@ -356,6 +361,13 @@ export class SchedulingGridService {
                 assignedUser: { select: { id: true, fullName: true, email: true } },
             },
         });
+
+        this.realtimeGateway.emitToLocation(
+            locationId,
+            RealtimeEvent.SHIFT_CREATED,
+            createdShift,
+        );
+        return createdShift;
     }
 
     async moveShift(callerUserId: string, shiftId: string, dto: MoveShiftDto) {
@@ -393,7 +405,7 @@ export class SchedulingGridService {
             }
         }
 
-        return this.prisma.shift.update({
+        const updatedShift = await this.prisma.shift.update({
             where: { id: shiftId },
             data: {
                 assignedUserId: targetUser,
@@ -406,6 +418,21 @@ export class SchedulingGridService {
                 assignedUser: { select: { id: true, fullName: true, email: true } },
             },
         });
+
+        // Broadcast instant update to all managers viewing this location grid
+        // this.realtimeGateway.emitToLocation(
+        //     updatedShift.locationId,
+        //     RealtimeEvent.SHIFT_MOVED,
+        //     {
+        //         shiftId: updatedShift.id,
+        //         assignedUser: updatedShift.assignedUser,
+        //         position: updatedShift.position,
+        //         startTime: updatedShift.startTime,
+        //         endTime: updatedShift.endTime,
+        //         updatedBy: callerUserId,
+        //     },
+        // );
+        return updatedShift;
     }
 
     async duplicateShift(callerUserId: string, shiftId: string, dto: DuplicateShiftDto) {
