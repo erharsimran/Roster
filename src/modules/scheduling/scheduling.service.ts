@@ -9,13 +9,16 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { CreateShiftDto, PublishRosterDto } from './dto/shift.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class SchedulingService {
   private readonly logger = new Logger(SchedulingService.name);
 
-  constructor(private readonly prisma: PrismaService) { }
-
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService, // <-- Inject
+  ) { }
   /**
    * Asserts location belongs to org and caller has permission to view/manage shifts.
    */
@@ -197,7 +200,7 @@ export class SchedulingService {
     });
   }
 
-  /**
+/**
    * Publishes all scheduled/draft shifts for a location in a specified window.
    */
   async publishRoster(callerUserId: string, locationId: string, dto: PublishRosterDto) {
@@ -209,7 +212,8 @@ export class SchedulingService {
       throw new BadRequestException('startDate must be earlier than endDate');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    // 1. Atomically update shifts and record audit log
+    const result = await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.shift.updateMany({
         where: {
           locationId,
@@ -243,6 +247,19 @@ export class SchedulingService {
         period: { start: dto.startDate, end: dto.endDate },
       };
     });
+
+    // 2. Queue background notification only if shifts were published
+    if (result.publishedCount > 0) {
+      await this.notificationsService.queueRosterPublishedNotification({
+        locationId: location.id,
+        locationName: location.name,
+        startDate: dto.startDate,
+        endDate: dto.endDate,
+        publishedCount: result.publishedCount,
+      });
+    }
+
+    return result;
   }
   /**
    * 1-Click "Copy Last Week" engine:

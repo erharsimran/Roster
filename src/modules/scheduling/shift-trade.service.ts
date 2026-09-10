@@ -14,12 +14,15 @@ import {
     TradeTypeEnum,
     TradeReviewAction,
 } from './dto/shift-trade.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ShiftTradeService {
     private readonly logger = new Logger(ShiftTradeService.name);
-
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly notificationsService: NotificationsService,
+    ) { }
 
     /**
      * 1. CLAIM OPEN SHIFT
@@ -128,7 +131,7 @@ export class ShiftTradeService {
         });
     }
 
-    /**
+/**
      * 2. INITIATE SHIFT TRADE OR DROP
      */
     async requestTrade(sourceUserId: string, dto: RequestShiftTradeDto) {
@@ -163,6 +166,8 @@ export class ShiftTradeService {
             throw new ConflictException('An active swap or drop request is already pending for this shift');
         }
 
+        let trade;
+
         // 1-to-1 Swap Validation
         if (dto.type === TradeTypeEnum.SWAP) {
             if (!dto.targetUserId || !dto.targetShiftId) {
@@ -180,7 +185,7 @@ export class ShiftTradeService {
                 throw new BadRequestException('Target shift does not belong to the selected coworker');
             }
 
-            return this.prisma.shiftTrade.create({
+            trade = await this.prisma.shiftTrade.create({
                 data: {
                     orgId: shift.location.orgId,
                     shiftId: shift.id,
@@ -192,21 +197,31 @@ export class ShiftTradeService {
                     reason: dto.reason?.trim() || null,
                 },
             });
+        } else {
+            // Shift Drop (Open Pool)
+            trade = await this.prisma.shiftTrade.create({
+                data: {
+                    orgId: shift.location.orgId,
+                    shiftId: shift.id,
+                    sourceUserId,
+                    type: 'drop',
+                    status: 'pending_manager', // Straight to manager approval
+                    reason: dto.reason?.trim() || null,
+                },
+            });
         }
 
-        // Shift Drop (Open Pool)
-        return this.prisma.shiftTrade.create({
-            data: {
-                orgId: shift.location.orgId,
-                shiftId: shift.id,
-                sourceUserId,
-                type: 'drop',
-                status: 'pending_manager', // Straight to manager approval
-                reason: dto.reason?.trim() || null,
-            },
+        // Enqueue background alert for the recipient or managers
+        await this.notificationsService.queueTradeRequestedNotification({
+            tradeId: trade.id,
+            tradeType: trade.type as 'swap' | 'drop',
+            sourceUserId: trade.sourceUserId,
+            targetUserId: trade.targetUserId,
+            shiftId: trade.shiftId,
         });
-    }
 
+        return trade;
+    }
     /**
      * 3. PEER RESPONSE TO SWAP REQUEST
      */

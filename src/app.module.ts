@@ -7,6 +7,7 @@ import { EmployeesModule } from './modules/employees/employees.module';
 import { SchedulingModule } from './modules/scheduling/scheduling.module';
 import { PrismaService } from './prisma.service';
 import { TimeTrackingModule } from './modules/time-tracking/time-tracking.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { TimeTrackingModule } from './modules/time-tracking/time-tracking.module
     EmployeesModule,
     SchedulingModule,
     TimeTrackingModule,
+    NotificationsModule,
   ],
   controllers: [],
   providers: [PrismaService],

@@ -5,8 +5,11 @@ import { SchedulingService } from './scheduling.service';
 import { SchedulingGridService } from './scheduling-grid.service';
 import { ShiftTradeService } from './shift-trade.service';
 import { PrismaService } from '../../prisma.service';
-
+import { NotificationsModule } from '../notifications/notifications.module'; // <-- 1. Import module
 @Module({
+  imports: [
+    NotificationsModule,
+  ],
   controllers: [SchedulingController, ShiftTradeController],
   providers: [
     SchedulingService,
