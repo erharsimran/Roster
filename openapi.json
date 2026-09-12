@@ -1,0 +1,1972 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/auth/google": {
+      "get": {
+        "operationId": "AuthController_googleAuth",
+        "summary": "Trigger Google OAuth login flow",
+        "description": "Direct browser link to start Google single sign-on.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/google/callback": {
+      "get": {
+        "operationId": "AuthController_googleAuthRedirect",
+        "summary": "Google OAuth callback handler",
+        "description": "Receives Google callback code, creates/links user, and redirects to web app.",
+        "parameters": [],
+        "responses": {
+          "302": {
+            "description": "Redirects to frontend auth callback."
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "operationId": "AuthController_getProfile",
+        "summary": "Current User Identity",
+        "description": "Protected test route to verify your JWT token in Swagger.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Auth"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/organizations/setup": {
+      "post": {
+        "operationId": "OrganizationController_setup",
+        "summary": "Bootstrap Organization & Assign Caller as Owner",
+        "description": "Atomically provisions an organization, default location, canonical RBAC permissions/roles, and logs an audit record.",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupOrgDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Organization workspace initialized successfully."
+          },
+          "400": {
+            "description": "Validation failed (e.g., invalid IANA timezone)."
+          },
+          "401": {
+            "description": "Missing or expired JWT Bearer token."
+          },
+          "409": {
+            "description": "User already owns/administers an organization."
+          }
+        },
+        "tags": [
+          "Organizations"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/positions": {
+      "post": {
+        "operationId": "PositionsController_create",
+        "summary": "Create a new job position for an organization",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePositionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Position created successfully"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "403": {
+            "description": "User does not belong to target organization"
+          },
+          "409": {
+            "description": "Position with this name already exists in org"
+          }
+        },
+        "tags": [
+          "Positions"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      },
+      "get": {
+        "operationId": "PositionsController_findAllByOrg",
+        "summary": "List all positions within an organization",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of positions with assignment/shift counts"
+          }
+        },
+        "tags": [
+          "Positions"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/positions/{id}": {
+      "get": {
+        "operationId": "PositionsController_findOne",
+        "summary": "Get details for a specific position",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Position details"
+          },
+          "404": {
+            "description": "Position not found"
+          }
+        },
+        "tags": [
+          "Positions"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "PositionsController_update",
+        "summary": "Update a position name or hourly rate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePositionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Position updated successfully"
+          },
+          "409": {
+            "description": "Position name conflicts with existing entry"
+          }
+        },
+        "tags": [
+          "Positions"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "PositionsController_remove",
+        "summary": "Delete a position (blocked if active shifts exist)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Position deleted successfully"
+          },
+          "409": {
+            "description": "Cannot delete: active shifts depend on it"
+          }
+        },
+        "tags": [
+          "Positions"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/organizations/{orgId}/employees": {
+      "get": {
+        "operationId": "EmployeesController_findAll",
+        "summary": "List all employees with roles and assigned positions",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Employees"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "EmployeesController_create",
+        "summary": "Onboard a new employee",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEmployeeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Employees"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/organizations/{orgId}/employees/{userId}": {
+      "patch": {
+        "operationId": "EmployeesController_updateProfile",
+        "summary": "Update employee profile and role/scope assignment",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEmployeeProfileDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Employees"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "EmployeesController_offboard",
+        "summary": "Offboard an employee from the organization",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Employees"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/organizations/{orgId}/employees/{userId}/positions": {
+      "patch": {
+        "operationId": "EmployeesController_assignPositions",
+        "summary": "Reassign positions to an employee",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignPositionsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Employees"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/scheduling/shifts": {
+      "post": {
+        "operationId": "SchedulingController_create",
+        "summary": "Create a new shift",
+        "description": "Creates a draft shift in scheduled status with cross-location conflict validation and max duration verification.",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShiftDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Shift successfully created in scheduled state."
+          },
+          "400": {
+            "description": "Validation failure or duration exceeds 24 hours."
+          },
+          "403": {
+            "description": "User lacks authorization for this location."
+          },
+          "404": {
+            "description": "Location, position, or assigned user does not exist."
+          },
+          "409": {
+            "description": "Employee already has an overlapping shift."
+          }
+        },
+        "tags": [
+          "Scheduling"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/scheduling/locations/{locationId}/shifts": {
+      "get": {
+        "operationId": "SchedulingController_findByLocation",
+        "summary": "List raw shifts by location and date range",
+        "description": "Retrieves flat shift records filtered by date range for a specific location.",
+        "parameters": [
+          {
+            "name": "locationId",
+            "required": true,
+            "in": "path",
+            "description": "Target Location UUID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startDate",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "2026-09-14T00:00:00Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "endDate",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "2026-09-20T23:59:59Z",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Flat list of shifts for the window."
+          }
+        },
+        "tags": [
+          "Scheduling"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/scheduling/locations/{locationId}/publish": {
+      "post": {
+        "operationId": "SchedulingController_publishRoster",
+        "summary": "Publish location roster",
+        "description": "Transitions all scheduled shifts within a date window to published status.",
+        "parameters": [
+          {
+            "name": "locationId",
+            "required": true,
+            "in": "path",
+            "description": "Target Location UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishRosterDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Roster published successfully."
+          }
+        },
+        "tags": [
+          "Scheduling"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/scheduling/locations/{locationId}/grid": {
+      "get": {
+        "operationId": "SchedulingController_getGrid",
+        "summary": "Fetch schedule grid matrix (Sling-style)",
+        "description": "Returns pre-computed schedule rows grouped by employee or position, with real-time labor totals, open shifts, overtime, and leadership compliance flags.",
+        "parameters": [
+          {
+            "name": "locationId",
+            "required": true,
+            "in": "path",
+            "description": "Target Location UUID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startDate",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-09-14T00:00:00Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "endDate",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-09-20T23:59:59Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "groupBy",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "employee",
+              "enum": [
+                "employee",
+                "position"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pre-computed grid payload."
+          }
+        },
+        "tags": [
+          "Scheduling"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/scheduling/shifts/{id}/move": {
+      "patch": {
+        "operationId": "SchedulingController_moveShift",
+        "summary": "Drag & drop shift move",
+        "description": "Reassigns a shift to a new user, position, date, or time slot with overlap validation.",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Target Shift UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveShiftDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Shift moved successfully."
+          },
+          "409": {
+            "description": "Target user already scheduled at another location."
+          }
+        },
+        "tags": [
+          "Scheduling"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/scheduling/shifts/{id}/duplicate": {
+      "post": {
+        "operationId": "SchedulingController_duplicateShift",
+        "summary": "Duplicate shift",
+        "description": "Copies a shift template to a target date, time, or employee as a draft shift.",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Source Shift UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DuplicateShiftDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Shift duplicated successfully."
+          }
+        },
+        "tags": [
+          "Scheduling"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/scheduling/locations/{locationId}/operating-hours": {
+      "put": {
+        "operationId": "SchedulingController_updateOperatingHours",
+        "summary": "Configure store operating hours & leadership staffing rule",
+        "description": "Sets daily open/close hours and configures whether a Lead/Manager must be on duty continuously.",
+        "parameters": [
+          {
+            "name": "locationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLocationOperatingHoursDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Scheduling"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/scheduling/locations/{locationId}/quick-drop": {
+      "post": {
+        "operationId": "SchedulingController_quickDrop",
+        "summary": "Quick-drop employee onto calendar day",
+        "description": "Instantly creates a shift starting at store open time for a date by dragging an employee chip onto a day.",
+        "parameters": [
+          {
+            "name": "locationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuickDropShiftDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Scheduling"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/scheduling/locations/{locationId}/copy-week": {
+      "post": {
+        "operationId": "SchedulingController_copyWeek",
+        "summary": "1-Click Copy Week Schedule",
+        "description": "Clones entire previous week roster into the future week in draft status, checking for conflicts.",
+        "parameters": [
+          {
+            "name": "locationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CopyWeekDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Scheduling"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/scheduling/trades/claim/{shiftId}": {
+      "post": {
+        "operationId": "ShiftTradeController_claimOpenShift",
+        "summary": "Claim an open shift",
+        "description": "Assigns an open shift to the requesting employee if they hold the qualification and have no overlapping shifts.",
+        "parameters": [
+          {
+            "name": "shiftId",
+            "required": true,
+            "in": "path",
+            "description": "Open Shift UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shift claimed successfully."
+          },
+          "403": {
+            "description": "Missing position qualification."
+          },
+          "409": {
+            "description": "Shift already claimed or conflicting shift exists."
+          }
+        },
+        "tags": [
+          "Shift Marketplace & Trades"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/scheduling/trades/request": {
+      "post": {
+        "operationId": "ShiftTradeController_requestTrade",
+        "summary": "Request shift swap or drop",
+        "description": "Creates a request to swap a shift with a coworker or drop it to the open shift pool.",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestShiftTradeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Trade request created."
+          }
+        },
+        "tags": [
+          "Shift Marketplace & Trades"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/scheduling/trades/{tradeId}/peer-respond": {
+      "put": {
+        "operationId": "ShiftTradeController_peerRespond",
+        "summary": "Accept or decline a peer swap request",
+        "description": "The target employee can accept or decline a 1-to-1 swap request before it routes to management.",
+        "parameters": [
+          {
+            "name": "tradeId",
+            "required": true,
+            "in": "path",
+            "description": "ShiftTrade UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Shift Marketplace & Trades"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/scheduling/trades/{tradeId}/manager-review": {
+      "put": {
+        "operationId": "ShiftTradeController_managerReview",
+        "summary": "Manager approval or rejection of a shift trade/drop",
+        "description": "Atomically executes shift reassignment upon approval and records an audit log.",
+        "parameters": [
+          {
+            "name": "tradeId",
+            "required": true,
+            "in": "path",
+            "description": "ShiftTrade UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewTradeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Shift Marketplace & Trades"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/scheduling/trades/locations/{locationId}/pending": {
+      "get": {
+        "operationId": "ShiftTradeController_getPendingTrades",
+        "summary": "List pending trade approvals for a store",
+        "description": "Retrieves all trade requests awaiting manager sign-off for a specific location.",
+        "parameters": [
+          {
+            "name": "locationId",
+            "required": true,
+            "in": "path",
+            "description": "Location UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Shift Marketplace & Trades"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/time-tracking/locations/{locationId}/coordinates": {
+      "put": {
+        "operationId": "TimeTrackingController_setLocationCoordinates",
+        "summary": "Configure store GPS coordinates & geofence radius",
+        "description": "Sets the latitude, longitude, and allowed proximity radius in meters for a location.",
+        "parameters": [
+          {
+            "name": "locationId",
+            "required": true,
+            "in": "path",
+            "description": "Location UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetLocationCoordinatesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Time Tracking & Geofencing"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/time-tracking/clock-in": {
+      "post": {
+        "operationId": "TimeTrackingController_clockIn",
+        "summary": "Mobile GPS Clock-In",
+        "description": "Verifies employee coordinates against the location geofence and matches against scheduled shifts.",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClockInDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Clock-in recorded. Returns entry status (active or flagged)."
+          },
+          "409": {
+            "description": "Employee is already clocked in."
+          }
+        },
+        "tags": [
+          "Time Tracking & Geofencing"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/time-tracking/clock-out": {
+      "post": {
+        "operationId": "TimeTrackingController_clockOut",
+        "summary": "Mobile GPS Clock-Out",
+        "description": "Concludes active time entry, verifies departure location, and calculates final shift duration.",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClockOutDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Clock-out recorded."
+          },
+          "404": {
+            "description": "No active clock-in found."
+          }
+        },
+        "tags": [
+          "Time Tracking & Geofencing"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/time-tracking/locations/{locationId}/timesheets": {
+      "get": {
+        "operationId": "TimeTrackingController_getTimesheets",
+        "summary": "Get store timesheets for manager audit",
+        "description": "Returns time entries with duration, labor costs, and geofence/punctuality flags.",
+        "parameters": [
+          {
+            "name": "locationId",
+            "required": true,
+            "in": "path",
+            "description": "Location UUID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startDate",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-09-01T00:00:00Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "endDate",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-09-30T23:59:59Z",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Time Tracking & Geofencing"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/time-tracking/entries/{id}/approve": {
+      "put": {
+        "operationId": "TimeTrackingController_approveTimeEntry",
+        "summary": "Manager approve flagged or completed timesheet entry",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "TimeEntry UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Time Tracking & Geofencing"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/analytics/locations/{locationId}/labor-variance": {
+      "get": {
+        "operationId": "AnalyticsController_getLaborVariance",
+        "summary": "Scheduled vs Actual Labor Cost Variance",
+        "description": "Calculates planned roster costs vs actual GPS-verified clock times, including overtime and variance.",
+        "parameters": [
+          {
+            "name": "locationId",
+            "required": true,
+            "in": "path",
+            "description": "Location UUID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startDate",
+            "required": true,
+            "in": "query",
+            "description": "Window start date (UTC)",
+            "schema": {
+              "example": "2026-09-01T00:00:00Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "endDate",
+            "required": true,
+            "in": "query",
+            "description": "Window end date (UTC)",
+            "schema": {
+              "example": "2026-09-07T23:59:59Z",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Labor Analytics"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/payroll/locations/{locationId}/summary": {
+      "get": {
+        "operationId": "PayrollController_getSummary",
+        "summary": "Calculate pay period summary",
+        "description": "Aggregates hours, regular pay, overtime (1.5x over 40h), and gross wages for all employees.",
+        "parameters": [
+          {
+            "name": "locationId",
+            "required": true,
+            "in": "path",
+            "description": "Location UUID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startDate",
+            "required": true,
+            "in": "query",
+            "description": "Pay period start timestamp (UTC)",
+            "schema": {
+              "example": "2026-09-01T00:00:00Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "endDate",
+            "required": true,
+            "in": "query",
+            "description": "Pay period end timestamp (UTC)",
+            "schema": {
+              "example": "2026-09-14T23:59:59Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "standard",
+              "enum": [
+                "standard",
+                "gusto",
+                "adp"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregated payroll numbers per employee."
+          }
+        },
+        "tags": [
+          "Payroll"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/payroll/locations/{locationId}/export": {
+      "get": {
+        "operationId": "PayrollController_exportCsv",
+        "summary": "Download Payroll CSV",
+        "description": "Generates a CSV file formatted for direct import into payroll software (Standard, Gusto, or ADP).",
+        "parameters": [
+          {
+            "name": "locationId",
+            "required": true,
+            "in": "path",
+            "description": "Location UUID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startDate",
+            "required": true,
+            "in": "query",
+            "description": "Pay period start timestamp (UTC)",
+            "schema": {
+              "example": "2026-09-01T00:00:00Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "endDate",
+            "required": true,
+            "in": "query",
+            "description": "Pay period end timestamp (UTC)",
+            "schema": {
+              "example": "2026-09-14T23:59:59Z",
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "standard",
+              "enum": [
+                "standard",
+                "gusto",
+                "adp"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Payroll"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Shift Scheduling API",
+    "description": "Workforce management & shift scheduling backend",
+    "version": "1.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "JWT-auth": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http",
+        "name": "Authorization",
+        "description": "Enter your JWT token",
+        "in": "header"
+      }
+    },
+    "schemas": {
+      "SetupOrgDto": {
+        "type": "object",
+        "properties": {
+          "organizationName": {
+            "type": "string",
+            "example": "Apex Logistics Inc.",
+            "description": "Legal or operating business name"
+          },
+          "timezone": {
+            "type": "string",
+            "example": "America/Toronto",
+            "default": "UTC"
+          },
+          "primaryLocationName": {
+            "type": "string",
+            "example": "Main Distribution Hub",
+            "description": "Primary branch location name"
+          },
+          "address": {
+            "type": "string",
+            "example": "450 Conestoga Blvd, Cambridge, ON",
+            "description": "Physical address used for shift geofencing"
+          }
+        },
+        "required": [
+          "organizationName",
+          "primaryLocationName"
+        ]
+      },
+      "CreatePositionDto": {
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "description": "Organization UUID"
+          },
+          "name": {
+            "type": "string",
+            "example": "Shift Supervisor",
+            "description": "Name of the job role or position"
+          },
+          "hourlyRate": {
+            "type": "number",
+            "example": 22.5,
+            "description": "Default base hourly rate for this position"
+          }
+        },
+        "required": [
+          "orgId",
+          "name"
+        ]
+      },
+      "UpdatePositionDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Shift Supervisor",
+            "description": "Name of the job role or position"
+          },
+          "hourlyRate": {
+            "type": "number",
+            "example": 22.5,
+            "description": "Default base hourly rate for this position"
+          }
+        }
+      },
+      "CreateEmployeeDto": {
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "description": "Organization UUID"
+          },
+          "email": {
+            "type": "string",
+            "example": "alex.worker@example.com",
+            "description": "Work or personal email"
+          },
+          "fullName": {
+            "type": "string",
+            "example": "Alex Mercer",
+            "description": "Full legal name"
+          },
+          "phone": {
+            "type": "string",
+            "example": "+15195550199",
+            "description": "Contact phone number (E.164 format)"
+          },
+          "roleName": {
+            "type": "string",
+            "example": "Employee",
+            "description": "Role name: Employee, Manager, or Admin",
+            "default": "Employee"
+          },
+          "scopeType": {
+            "type": "string",
+            "enum": [
+              "organization",
+              "location"
+            ],
+            "example": "location",
+            "description": "Role assignment scope"
+          },
+          "scopeId": {
+            "type": "string",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "description": "UUID of the target Location or Organization"
+          },
+          "positionIds": {
+            "example": [
+              "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+            ],
+            "description": "Array of Position UUIDs to assign to this employee",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "orgId",
+          "email",
+          "fullName",
+          "roleName",
+          "scopeType",
+          "scopeId"
+        ]
+      },
+      "UpdateEmployeeProfileDto": {
+        "type": "object",
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "description": "Organization UUID"
+          },
+          "email": {
+            "type": "string",
+            "example": "alex.worker@example.com",
+            "description": "Work or personal email"
+          },
+          "fullName": {
+            "type": "string",
+            "example": "Alex Mercer",
+            "description": "Full legal name"
+          },
+          "phone": {
+            "type": "string",
+            "example": "+15195550199",
+            "description": "Contact phone number (E.164 format)"
+          },
+          "roleName": {
+            "type": "string",
+            "example": "Employee",
+            "description": "Role name: Employee, Manager, or Admin",
+            "default": "Employee"
+          },
+          "scopeType": {
+            "type": "string",
+            "enum": [
+              "organization",
+              "location"
+            ],
+            "example": "location",
+            "description": "Role assignment scope"
+          },
+          "scopeId": {
+            "type": "string",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "description": "UUID of the target Location or Organization"
+          },
+          "positionIds": {
+            "example": [
+              "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+            ],
+            "description": "Array of Position UUIDs to assign to this employee",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "AssignPositionsDto": {
+        "type": "object",
+        "properties": {
+          "positionIds": {
+            "example": [
+              "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+            ],
+            "description": "Complete list of Position UUIDs assigned to this employee",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "positionIds"
+        ]
+      },
+      "CreateShiftDto": {
+        "type": "object",
+        "properties": {
+          "locationId": {
+            "type": "string",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "description": "Location UUID"
+          },
+          "positionId": {
+            "type": "string",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "description": "Position UUID"
+          },
+          "assignedUserId": {
+            "type": "string",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "description": "Assigned User UUID (omit for open claimable shifts)"
+          },
+          "startTime": {
+            "type": "string",
+            "example": "2026-09-15T09:00:00Z",
+            "description": "Shift start timestamp in ISO-8601 UTC"
+          },
+          "endTime": {
+            "type": "string",
+            "example": "2026-09-15T17:00:00Z",
+            "description": "Shift end timestamp in ISO-8601 UTC"
+          }
+        },
+        "required": [
+          "locationId",
+          "startTime",
+          "endTime"
+        ]
+      },
+      "PublishRosterDto": {
+        "type": "object",
+        "properties": {
+          "startDate": {
+            "type": "string",
+            "example": "2026-09-14T00:00:00Z",
+            "description": "Start of schedule window"
+          },
+          "endDate": {
+            "type": "string",
+            "example": "2026-09-20T23:59:59Z",
+            "description": "End of schedule window"
+          }
+        },
+        "required": [
+          "startDate",
+          "endDate"
+        ]
+      },
+      "MoveShiftDto": {
+        "type": "object",
+        "properties": {
+          "targetUserId": {
+            "type": "object",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+          },
+          "targetPositionId": {
+            "type": "object",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+          },
+          "newStartTime": {
+            "type": "string",
+            "example": "2026-09-16T09:00:00Z"
+          },
+          "newEndTime": {
+            "type": "string",
+            "example": "2026-09-16T17:00:00Z"
+          }
+        },
+        "required": [
+          "newStartTime",
+          "newEndTime"
+        ]
+      },
+      "DuplicateShiftDto": {
+        "type": "object",
+        "properties": {
+          "newStartTime": {
+            "type": "string",
+            "example": "2026-09-17T09:00:00Z"
+          },
+          "newEndTime": {
+            "type": "string",
+            "example": "2026-09-17T17:00:00Z"
+          },
+          "targetUserId": {
+            "type": "string",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+          }
+        },
+        "required": [
+          "newStartTime",
+          "newEndTime"
+        ]
+      },
+      "UpdateLocationOperatingHoursDto": {
+        "type": "object",
+        "properties": {
+          "operatingHours": {
+            "type": "object",
+            "example": {
+              "monday": {
+                "isOpen": true,
+                "open": "08:00",
+                "close": "22:00"
+              },
+              "tuesday": {
+                "isOpen": true,
+                "open": "08:00",
+                "close": "22:00"
+              },
+              "wednesday": {
+                "isOpen": true,
+                "open": "08:00",
+                "close": "22:00"
+              },
+              "thursday": {
+                "isOpen": true,
+                "open": "08:00",
+                "close": "22:00"
+              },
+              "friday": {
+                "isOpen": true,
+                "open": "08:00",
+                "close": "23:00"
+              },
+              "saturday": {
+                "isOpen": true,
+                "open": "09:00",
+                "close": "23:00"
+              },
+              "sunday": {
+                "isOpen": true,
+                "open": "10:00",
+                "close": "18:00"
+              }
+            }
+          },
+          "requireLeadershipOnDuty": {
+            "type": "boolean",
+            "example": true,
+            "description": "Enforces that at least 1 Manager/TL/ATL must be on shift at all operating times"
+          }
+        },
+        "required": [
+          "operatingHours",
+          "requireLeadershipOnDuty"
+        ]
+      },
+      "QuickDropShiftDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+          },
+          "date": {
+            "type": "string",
+            "example": "2026-09-15",
+            "description": "YYYY-MM-DD date in store local timezone"
+          },
+          "positionId": {
+            "type": "string",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+          },
+          "durationHours": {
+            "type": "number",
+            "example": 8,
+            "default": 8,
+            "description": "Shift duration in hours"
+          }
+        },
+        "required": [
+          "userId",
+          "date"
+        ]
+      },
+      "CopyWeekDto": {
+        "type": "object",
+        "properties": {
+          "sourceStartDate": {
+            "type": "string",
+            "example": "2026-09-07T00:00:00Z",
+            "description": "Source week start date (Monday)"
+          },
+          "targetStartDate": {
+            "type": "string",
+            "example": "2026-09-14T00:00:00Z",
+            "description": "Target week start date (Monday)"
+          },
+          "skipConflicts": {
+            "type": "boolean",
+            "example": true,
+            "default": true,
+            "description": "If true, skips shifts that would cause an employee double-booking instead of failing"
+          }
+        },
+        "required": [
+          "sourceStartDate",
+          "targetStartDate",
+          "skipConflicts"
+        ]
+      },
+      "RequestShiftTradeDto": {
+        "type": "object",
+        "properties": {
+          "shiftId": {
+            "type": "string",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "description": "Shift you own and want to trade/drop"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "swap",
+              "drop"
+            ],
+            "example": "drop"
+          },
+          "targetUserId": {
+            "type": "string",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "description": "Target employee for 1-to-1 swap (omit if dropping to open pool)"
+          },
+          "targetShiftId": {
+            "type": "string",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "description": "The shift owned by target employee being swapped for"
+          },
+          "reason": {
+            "type": "string",
+            "example": "Doctor appointment conflict"
+          }
+        },
+        "required": [
+          "shiftId",
+          "type"
+        ]
+      },
+      "ReviewTradeDto": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "reject"
+            ],
+            "example": "approve"
+          },
+          "reason": {
+            "type": "string",
+            "example": "Approved - coverage confirmed"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "SetLocationCoordinatesDto": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "example": 43.3616
+          },
+          "longitude": {
+            "type": "number",
+            "example": -80.3144
+          },
+          "geofenceRadiusMeters": {
+            "type": "number",
+            "example": 150,
+            "default": 150,
+            "description": "Acceptable radius in meters"
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude",
+          "geofenceRadiusMeters"
+        ]
+      },
+      "ClockInDto": {
+        "type": "object",
+        "properties": {
+          "locationId": {
+            "type": "string",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "description": "Location UUID"
+          },
+          "latitude": {
+            "type": "number",
+            "example": 43.3616,
+            "description": "GPS Latitude"
+          },
+          "longitude": {
+            "type": "number",
+            "example": -80.3144,
+            "description": "GPS Longitude"
+          },
+          "shiftId": {
+            "type": "string",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "description": "Linked Shift UUID"
+          },
+          "notes": {
+            "type": "string",
+            "example": "Covering for John Doe"
+          }
+        },
+        "required": [
+          "locationId",
+          "latitude",
+          "longitude"
+        ]
+      },
+      "ClockOutDto": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "example": 43.3616,
+            "description": "GPS Latitude"
+          },
+          "longitude": {
+            "type": "number",
+            "example": -80.3144,
+            "description": "GPS Longitude"
+          },
+          "notes": {
+            "type": "string",
+            "example": "Store locked and alarms armed"
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude"
+        ]
+      }
+    }
+  }
+}

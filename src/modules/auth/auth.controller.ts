@@ -27,13 +27,15 @@ export class AuthController {
   })
   @ApiResponse({ status: 302, description: 'Redirects to frontend auth callback.' })
   async googleAuthRedirect(@Req() req: any, @Res() res: Response) {
-      const authResult = await this.authService.validateGoogleUser(req.user);
-
+        try {
+            const { accessToken } = req.user;
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
-      const token = authResult.accessToken;
-      const user = encodeURIComponent(JSON.stringify(authResult.user));
-
-      return res.redirect(`${frontendUrl}/auth/callback?token=${token}&user=${user}`);
+          return res.redirect(`${frontendUrl}/auth/callback?token=${accessToken}`);
+      } catch (error) {
+          console.error('OAuth redirect processing failed:', error);
+          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+          return res.redirect(`${frontendUrl}/login?error=oauth_failed`);
+      }
   }
 
     @Get('me')

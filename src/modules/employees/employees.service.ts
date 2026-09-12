@@ -8,7 +8,12 @@ import {
     BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
-import { CreateEmployeeDto, UpdateEmployeeProfileDto, AssignPositionsDto } from './dto/employee.dto';
+import {
+    CreateEmployeeDto,
+    UpdateEmployeeProfileDto,
+    AssignPositionsDto,
+} from './dto/employee.dto';
+import { ScopeType } from '@prisma/client';
 
 @Injectable()
 export class EmployeesService {
@@ -93,7 +98,6 @@ export class EmployeesService {
                         },
                     });
                 } else {
-                    // Check if already assigned to this role and scope
                     const existingRole = await tx.userRole.findUnique({
                         where: {
                             userId_roleId_scopeType_scopeId: {
@@ -183,36 +187,224 @@ export class EmployeesService {
     async findAllByOrg(callerUserId: string, orgId: string) {
         await this.assertAdminAccess(callerUserId, orgId);
 
-        return this.prisma.user.findMany({
-            where: {
-                userRoles: {
-                    some: {
-                        role: { orgId },
+        const [users, locations] = await Promise.all([
+            this.prisma.user.findMany({
+                where: {
+                    userRoles: {
+                        some: {
+                            role: { orgId },
+                        },
                     },
                 },
-            },
-            select: {
-                id: true,
-                email: true,
-                fullName: true,
-                phone: true,
-                createdAt: true,
+                select: {
+                    id: true,
+                    email: true,
+                    fullName: true,
+                    phone: true,
+                    createdAt: true,
+                    userRoles: {
+                        where: { role: { orgId } },
+                        select: {
+                            scopeType: true,
+                            scopeId: true,
+                            role: { select: { id: true, name: true } },
+                        },
+                    },
+                    employeePositions: {
+                        where: { position: { orgId } },
+                        select: {
+                            position: { select: { id: true, name: true, hourlyRate: true } },
+                        },
+                    },
+                },
+                orderBy: { fullName: 'asc' },
+            }),
+            this.prisma.location.findMany({
+                where: { orgId },
+                select: { id: true, name: true },
+            }),
+        ]);
+
+        const locationMap = new Map(locations.map((loc) => [loc.id, loc.name]));
+
+        // Shape output to support both nested structures and direct flat field lookups
+        return users.map((user) => {
+            const primaryRole = user.userRoles[0];
+            const scopeName =
+                primaryRole?.scopeType === 'organization'
+                    ? 'All Locations'
+                    : locationMap.get(primaryRole?.scopeId) || 'Unknown Location';
+
+            return {
+                ...user,
+                roleName: primaryRole?.role?.name ?? 'Employee',
+                scopeType: primaryRole?.scopeType ?? 'organization',
+                scopeName,
+                positions: user.employeePositions.map((ep) => ep.position),
+            };
+        });
+    }
+
+    async updateProfile(
+        callerUserId: string,
+        orgId: string,
+        targetUserId: string,
+        dto: UpdateEmployeeProfileDto,
+    ) {
+        await this.assertAdminAccess(callerUserId, orgId);
+
+        const targetUser = await this.prisma.user.findUnique({
+            where: { id: targetUserId },
+            include: {
                 userRoles: {
                     where: { role: { orgId } },
-                    select: {
-                        scopeType: true,
-                        scopeId: true,
-                        role: { select: { id: true, name: true } },
-                    },
-                },
-                employeePositions: {
-                    where: { position: { orgId } },
-                    select: {
-                        position: { select: { id: true, name: true, hourlyRate: true } },
-                    },
+                    include: { role: true },
                 },
             },
-            orderBy: { fullName: 'asc' },
+        });
+
+        if (!targetUser || targetUser.userRoles.length === 0) {
+            throw new NotFoundException('Employee not found in this organization');
+        }
+
+        return this.prisma.$transaction(async (tx) => {
+            // 1. Update basic user profile attributes
+            const updatedUser = await tx.user.update({
+                where: { id: targetUserId },
+                data: {
+                    ...(dto.fullName ? { fullName: dto.fullName.trim() } : {}),
+                    ...(dto.phone !== undefined ? { phone: dto.phone?.trim() || null } : {}),
+                },
+                select: { id: true, email: true, fullName: true, phone: true },
+            });
+
+            // 2. Reassign role or scope if provided
+            if (dto.roleName || dto.scopeType || dto.scopeId) {
+                const currentAssignment = targetUser.userRoles[0];
+
+                let targetRoleId = currentAssignment.roleId;
+                if (dto.roleName) {
+                    const newRole = await tx.role.findUnique({
+                        where: { orgId_name: { orgId, name: dto.roleName.trim() } },
+                    });
+                    if (!newRole) {
+                        throw new NotFoundException(`Role "${dto.roleName}" does not exist in this organization`);
+                    }
+                    targetRoleId = newRole.id;
+                }
+
+                const targetScopeType = (dto.scopeType as ScopeType) || currentAssignment.scopeType;
+                let targetScopeId = dto.scopeId || currentAssignment.scopeId;
+
+                if (targetScopeType === 'organization') {
+                    targetScopeId = orgId;
+                } else if (dto.scopeId) {
+                    const loc = await tx.location.findFirst({ where: { id: dto.scopeId, orgId } });
+                    if (!loc) throw new NotFoundException(`Location ${dto.scopeId} not found`);
+                }
+
+                // Delete previous organization-scoped role and replace with updated one
+                await tx.userRole.delete({
+                    where: { id: currentAssignment.id },
+                });
+
+                await tx.userRole.create({
+                    data: {
+                        userId: targetUserId,
+                        roleId: targetRoleId,
+                        scopeType: targetScopeType,
+                        scopeId: targetScopeId,
+                    },
+                });
+            }
+
+            // 3. Audit trail
+            // await tx.auditLog.create({
+            //     data: {
+            //         orgId,
+            //         userId: callerUserId,
+            //         action: 'employee.profile_updated',
+            //         resourceType: 'user',
+            //         resourceId: targetUserId,
+            //         metadata: { changes: dto },
+            //     },
+            // });
+
+            return updatedUser;
+        });
+    }
+
+    async offboard(callerUserId: string, orgId: string, targetUserId: string) {
+        await this.assertAdminAccess(callerUserId, orgId);
+
+        if (callerUserId === targetUserId) {
+            throw new BadRequestException('You cannot offboard yourself from the organization');
+        }
+
+        // Check if employee exists in this org
+        const targetRoles = await this.prisma.userRole.findMany({
+            where: {
+                userId: targetUserId,
+                role: { orgId },
+            },
+            include: { role: true },
+        });
+
+        if (targetRoles.length === 0) {
+            throw new NotFoundException('Employee not found in this organization');
+        }
+
+        // Prevent offboarding the last Owner
+        const isOwner = targetRoles.some((ur) => ur.role.name === 'Owner');
+        if (isOwner) {
+            const ownerCount = await this.prisma.userRole.count({
+                where: {
+                    role: { orgId, name: 'Owner' },
+                },
+            });
+            if (ownerCount <= 1) {
+                throw new BadRequestException('Cannot offboard the sole Owner of the organization');
+            }
+        }
+
+        return this.prisma.$transaction(async (tx) => {
+            // 1. Remove all roles associated with this tenant
+            await tx.userRole.deleteMany({
+                where: {
+                    userId: targetUserId,
+                    role: { orgId },
+                },
+            });
+
+            // 2. Remove position links for this tenant's positions
+            const orgPositions = await tx.position.findMany({
+                where: { orgId },
+                select: { id: true },
+            });
+            const orgPositionIds = orgPositions.map((p) => p.id);
+
+            await tx.employeePosition.deleteMany({
+                where: {
+                    userId: targetUserId,
+                    positionId: { in: orgPositionIds },
+                },
+            });
+
+            // 3. Audit log
+            await tx.auditLog.create({
+                data: {
+                    orgId,
+                    userId: callerUserId,
+                    action: 'employee.offboard',
+                    resourceType: 'user',
+                    resourceId: targetUserId,
+                    metadata: {
+                        revokedRoles: targetRoles.map((r) => r.role.name),
+                    },
+                },
+            });
+
+            return { success: true, message: 'Employee offboarded successfully' };
         });
     }
 
@@ -224,7 +416,6 @@ export class EmployeesService {
     ) {
         await this.assertAdminAccess(callerUserId, orgId);
 
-        // Verify all positions belong to the org
         const validPositions = await this.prisma.position.findMany({
             where: {
                 id: { in: dto.positionIds },
@@ -238,7 +429,6 @@ export class EmployeesService {
         }
 
         return this.prisma.$transaction(async (tx) => {
-            // Clear previous positions for this org's scope
             const existingOrgPositions = await tx.position.findMany({
                 where: { orgId },
                 select: { id: true },
@@ -252,7 +442,6 @@ export class EmployeesService {
                 },
             });
 
-            // Insert new assignments
             const positionLinks = dto.positionIds.map((posId) => ({
                 userId: targetUserId,
                 positionId: posId,

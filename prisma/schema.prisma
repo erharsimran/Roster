@@ -65,19 +65,22 @@ model User {
   initiatedTrades   ShiftTrade[]       @relation("TradeSourceUser")
   receivedTrades    ShiftTrade[]       @relation("TradeTargetUser")
   timeOffRequests   TimeOffRequest[]
+  rolesUpdated      Role[]             @relation("RoleLastUpdatedBy")
 
   @@map("users")
 }
 
 model Role {
-  id           String  @id @default(uuid())
-  orgId        String  @map("org_id")
-  name         String
-  isSystemRole Boolean @default(false) @map("is_system_role")
+  id            String  @id @default(uuid())
+  orgId         String  @map("org_id")
+  name          String
+  isSystemRole  Boolean @default(false) @map("is_system_role")
+  lastUpdatedBy String? @map("last_updated_by")
 
-  organization    Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  rolePermissions RolePermission[]
-  userRoles       UserRole[]
+  organization      Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  lastUpdatedByUser User?            @relation("RoleLastUpdatedBy", fields: [lastUpdatedBy], references: [id], onDelete: SetNull)
+  rolePermissions   RolePermission[]
+  userRoles         UserRole[]
 
   @@unique([orgId, name])
   @@map("roles")

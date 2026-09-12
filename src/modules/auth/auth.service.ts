@@ -141,6 +141,7 @@ export class AuthService {
                 user: fullProfile,
             };
         } catch (error) {
+            console.error('--- GOOGLE AUTH ERROR DETAILS ---', error);
             if (error instanceof NotFoundException) throw error;
             throw new InternalServerErrorException('Error authenticating with Google');
         }
@@ -151,73 +152,89 @@ export class AuthService {
             include: {
                 userRoles: {
                     include: {
-                        role: true,
-                    },
-                },
-                employeePositions: {
-                    include: {
-                        position: true,
-                    },
-                },
-            },
+                  role: {
+                      include: {
+                          rolePermissions: {
+                              include: {
+                                  permission: true,
+                              },
+                          },
+                      },
+                  },
+              },
+          },
+          employeePositions: {
+              include: {
+                  position: true,
+              },
+          },
+      },
+  });
+
+       if (!user) {
+           throw new NotFoundException('User profile not found');
+       }
+
+       // 1. Locate organization scope
+       const orgRole = user.userRoles?.find(
+           (ur) => String(ur.scopeType).toLowerCase() === 'organization',
+       );
+
+       let orgId: string | null = orgRole?.scopeId ?? null;
+
+       // 2. Fallback to location scope if needed
+       if (!orgId) {
+      const locRole = user.userRoles?.find(
+          (ur) => String(ur.scopeType).toLowerCase() === 'location',
+      );
+      if (locRole?.scopeId) {
+        const loc = await this.prisma.location.findUnique({
+            where: { id: locRole.scopeId },
+            select: { orgId: true },
         });
+          if (loc) orgId = loc.orgId;
+      }
+  }
 
-        if (!user) {
-            throw new NotFoundException('User profile not found');
-        }
+       let organization: {
+           id: string;
+           name: string;
+           timezone: string;
+           createdAt: Date;
+       } | null = null;
 
-        // 1. Check for organization-level scope
-        const orgRole = user.userRoles.find(
-            (ur) => ur.scopeType === ScopeType.organization,
-        );
+       if (orgId) {
+           organization = await this.prisma.organization.findUnique({
+               where: { id: orgId },
+        select: { id: true, name: true, timezone: true, createdAt: true },
+    });
+  }
 
-        let orgId: string | null = orgRole?.scopeId ?? null;
+       // 3. Extract unique permissions (empty array for brand new accounts)
+       const permissionSet = new Set<string>();
+       user.userRoles?.forEach((ur) => {
+           ur.role?.rolePermissions?.forEach((rp) => {
+               if (rp.permission?.key) {
+                   permissionSet.add(rp.permission.key);
+               }
+           });
+       });
 
-        // 2. Fallback: If user only has a location-scoped role, resolve parent organization
-        if (!orgId) {
-            const locRole = user.userRoles.find(
-                (ur) => ur.scopeType === ScopeType.location,
-            );
-            if (locRole?.scopeId) {
-                const location = await this.prisma.location.findUnique({
-                    where: { id: locRole.scopeId },
-                    select: { orgId: true },
-                });
-                if (location) orgId = location.orgId;
-            }
-        }
+       const activeRole =
+           orgRole?.role?.name ?? user.userRoles?.[0]?.role?.name ?? 'Employee';
 
-        // 3. Resolve Organization entity
-        let organization: {
-            id: string;
-            name: string;
-            timezone: string;
-            createdAt: Date;
-        } | null = null;
-
-        if (orgId) {
-            organization = await this.prisma.organization.findUnique({
-                where: { id: orgId },
-                select: {
-                    id: true,
-                    name: true,
-                    timezone: true,
-                    createdAt: true,
-                },
-            });
-        }
-
-        return {
-            id: user.id,
-            email: user.email,
-            fullName: user.fullName,
-            phone: user.phone,
-            orgId,
-            role: orgRole?.role?.name ?? user.userRoles[0]?.role?.name ?? 'Employee',
-            organization,
-            positions: user.employeePositions.map((ep) => ep.position),
-        };
-    }
+       return {
+           id: user.id,
+           email: user.email,
+           fullName: user.fullName,
+           phone: user.phone,
+           orgId,
+      role: activeRole,
+      organization,
+           permissions: Array.from(permissionSet),
+           positions: user.employeePositions?.map((ep) => ep.position) ?? [],
+       };
+   }
 
 }
 
