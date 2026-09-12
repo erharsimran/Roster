@@ -44,6 +44,9 @@ export class AuthController {
         description: 'Protected test route to verify your JWT token in Swagger.',
     })
     getProfile(@Req() req: any) {
-        return req.user;
+        const userId = req.user.sub || req.user.id || req.user.userId;
+        return this.authService.getMe(userId);
     }
+
+
 }
