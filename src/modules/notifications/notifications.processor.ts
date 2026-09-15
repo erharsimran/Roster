@@ -9,6 +9,8 @@ import {
     ShiftTradeRequestedJobPayload,
     ShiftTradeResolvedJobPayload,
     ShiftReminderJobPayload,
+    TimeOffRequestedJobPayload,
+    TimeOffReviewedJobPayload,
 } from './notifications.constants';
 
 @Processor(NOTIFICATIONS_QUEUE)
@@ -34,6 +36,12 @@ export class NotificationsProcessor extends WorkerHost {
 
             case NotificationJobType.UPCOMING_SHIFT_REMINDER:
                 return this.handleShiftReminder(job.data as ShiftReminderJobPayload);
+
+            case NotificationJobType.TIME_OFF_REQUESTED:
+                return this.handleTimeOffRequested(job.data as TimeOffRequestedJobPayload);
+
+            case NotificationJobType.TIME_OFF_REVIEWED:
+                return this.handleTimeOffReviewed(job.data as TimeOffReviewedJobPayload);
 
             default:
                 this.logger.warn(`Unhandled notification job type: ${job.name}`);
@@ -97,6 +105,52 @@ export class NotificationsProcessor extends WorkerHost {
         });
         this.logger.log(
             `Sent 2-hour shift reminder to ${user?.fullName} for shift starting at ${data.startTime} at ${data.locationName}.`,
+        );
+        return { success: true };
+    }
+
+    private async handleTimeOffRequested(data: TimeOffRequestedJobPayload) {
+        // Notify managers/admins at this location — mirrors handleTradeRequested's
+        // "drop to pool" branch, which also targets location management rather
+        // than a single recipient.
+        const location = await this.prisma.location.findUnique({
+            where: { id: data.locationId },
+            select: { orgId: true },
+        });
+
+        // Note: this targets the three seeded role names for notification
+        // purposes only (who to ping), not an authorization decision — the
+        // actual review endpoint is gated by the 'timeoff:approve' permission.
+        // A custom role granted 'timeoff:approve' won't be picked up here yet;
+        // fine for now since notifications are log-only stubs, but worth
+        // switching to a permission-based lookup once real delivery is wired up.
+        const managers = location
+            ? await this.prisma.userRole.findMany({
+                where: {
+                    OR: [
+                        { scopeType: 'location', scopeId: data.locationId },
+                        { scopeType: 'organization', scopeId: location.orgId },
+                    ],
+                    role: { name: { in: ['Owner', 'Admin', 'Manager'] } },
+                },
+                select: { userId: true },
+                distinct: ['userId'],
+            })
+            : [];
+
+        this.logger.log(
+            `Notified ${managers.length} manager(s) at ${data.locationName} of a new time-off request (${data.startDate} - ${data.endDate}).`,
+        );
+        return { success: true };
+    }
+
+    private async handleTimeOffReviewed(data: TimeOffReviewedJobPayload) {
+        const user = await this.prisma.user.findUnique({
+            where: { id: data.userId },
+            select: { email: true, fullName: true },
+        });
+        this.logger.log(
+            `Notified ${user?.fullName} that their time-off request was ${data.status}.`,
         );
         return { success: true };
     }

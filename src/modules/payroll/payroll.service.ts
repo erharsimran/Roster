@@ -5,6 +5,7 @@ import {
     Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
+import { PermissionService } from '../../common/services/permission.service';
 import { GeneratePayrollDto, PayrollFormat } from './dto/payroll.dto';
 
 export interface EmployeePayrollRecord {
@@ -25,7 +26,10 @@ export interface EmployeePayrollRecord {
 export class PayrollService {
     private readonly logger = new Logger(PayrollService.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly permissionService: PermissionService,
+    ) { }
 
     private async assertPayrollAccess(userId: string, locationId: string) {
         const location = await this.prisma.location.findUnique({
@@ -35,18 +39,12 @@ export class PayrollService {
 
         if (!location) throw new NotFoundException('Location not found');
 
-        const role = await this.prisma.userRole.findFirst({
-            where: {
-                userId,
-                OR: [
-                    { scopeType: 'organization', scopeId: location.orgId },
-                    { scopeType: 'location', scopeId: location.id },
-                ],
-            },
-            include: { role: true },
+        const allowed = await this.permissionService.can(userId, 'payroll:read', {
+            scopeType: 'location',
+            scopeId: location.id,
         });
 
-        if (!role || !['Owner', 'Admin', 'Manager'].includes(role.role.name)) {
+        if (!allowed) {
             throw new ForbiddenException('Insufficient permissions to view or export payroll');
         }
 

@@ -8,6 +8,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
+import { PermissionService } from '../../common/services/permission.service';
+import { PermissionKey } from '../../common/constants/permissions.constants';
 import { CreateShiftDto, PublishRosterDto } from './dto/shift.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 
@@ -17,12 +19,20 @@ export class SchedulingService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly permissionService: PermissionService,
     private readonly notificationsService: NotificationsService, // <-- Inject
   ) { }
   /**
-   * Asserts location belongs to org and caller has permission to view/manage shifts.
+   * Asserts location belongs to org and caller holds the given permission
+   * for it (org-scoped roles cascade down automatically via PermissionService).
+   * Previously hardcoded to ['Owner','Admin','Manager'] role names regardless
+   * of the action — now each call site passes the specific permission it needs.
    */
-  private async assertLocationAccess(userId: string, locationId: string) {
+  private async assertLocationAccess(
+    userId: string,
+    locationId: string,
+    permission: PermissionKey = 'shifts:write',
+  ) {
     const location = await this.prisma.location.findUnique({
       where: { id: locationId },
       select: { id: true, orgId: true, name: true, timezone: true },
@@ -32,19 +42,13 @@ export class SchedulingService {
       throw new NotFoundException(`Location with ID ${locationId} not found`);
     }
 
-    const callerRole = await this.prisma.userRole.findFirst({
-      where: {
-        userId,
-        OR: [
-          { scopeType: 'organization', scopeId: location.orgId },
-          { scopeType: 'location', scopeId: location.id },
-        ],
-      },
-      include: { role: true },
+    const allowed = await this.permissionService.can(userId, permission, {
+      scopeType: 'location',
+      scopeId: location.id,
     });
 
-    if (!callerRole || !['Owner', 'Admin', 'Manager'].includes(callerRole.role.name)) {
-      throw new ForbiddenException('You lack authorization to manage shifts for this location');
+    if (!allowed) {
+      throw new ForbiddenException(`Missing permission "${permission}" for this location`);
     }
 
     return location;
@@ -87,7 +91,7 @@ export class SchedulingService {
    * Creates a draft shift in scheduled status.
    */
   async create(callerUserId: string, dto: CreateShiftDto) {
-    const location = await this.assertLocationAccess(callerUserId, dto.locationId);
+    const location = await this.assertLocationAccess(callerUserId, dto.locationId, 'shifts:write');
     const start = new Date(dto.startTime);
     const end = new Date(dto.endTime);
 
@@ -182,7 +186,7 @@ export class SchedulingService {
     startDate?: string,
     endDate?: string,
   ) {
-    await this.assertLocationAccess(callerUserId, locationId);
+    await this.assertLocationAccess(callerUserId, locationId, 'shifts:read');
 
     const whereClause: any = { locationId };
     if (startDate && endDate) {
@@ -204,7 +208,7 @@ export class SchedulingService {
    * Publishes all scheduled/draft shifts for a location in a specified window.
    */
   async publishRoster(callerUserId: string, locationId: string, dto: PublishRosterDto) {
-    const location = await this.assertLocationAccess(callerUserId, locationId);
+    const location = await this.assertLocationAccess(callerUserId, locationId, 'shifts:publish');
     const start = new Date(dto.startDate);
     const end = new Date(dto.endDate);
 
@@ -267,7 +271,7 @@ export class SchedulingService {
    * adjusting timestamps by the week offset and reporting any skipped double-bookings.
    */
   async copyWeek(callerUserId: string, locationId: string, dto: { sourceStartDate: string; targetStartDate: string; skipConflicts?: boolean }) {
-    const location = await this.assertLocationAccess(callerUserId, locationId);
+    const location = await this.assertLocationAccess(callerUserId, locationId, 'shifts:write');
 
     const srcStart = new Date(dto.sourceStartDate);
     const srcEnd = new Date(srcStart.getTime() + 7 * 24 * 60 * 60 * 1000);

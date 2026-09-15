@@ -8,6 +8,7 @@ import {
     BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
+import { PermissionService } from '../../common/services/permission.service';
 import {
     CreateEmployeeDto,
     UpdateEmployeeProfileDto,
@@ -19,23 +20,25 @@ import { ScopeType } from '@prisma/client';
 export class EmployeesService {
     private readonly logger = new Logger(EmployeesService.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly permissionService: PermissionService,
+    ) { }
 
     /**
-     * Verifies the caller is an Admin or Owner in the target organization.
+     * Verifies the caller holds 'users:manage' for the org. Was previously
+     * hardcoded to role names ['Owner','Admin'] — meant a custom role granted
+     * 'users:manage' via the organization-roles module could never actually
+     * onboard/offboard employees. Now checks the real permission.
      */
     private async assertAdminAccess(callerUserId: string, orgId: string) {
-        const callerRole = await this.prisma.userRole.findFirst({
-            where: {
-                userId: callerUserId,
-                scopeId: orgId,
-                scopeType: 'organization',
-            },
-            include: { role: true },
+        const allowed = await this.permissionService.can(callerUserId, 'users:manage', {
+            scopeType: 'organization',
+            scopeId: orgId,
         });
 
-        if (!callerRole || !['Owner', 'Admin'].includes(callerRole.role.name)) {
-            throw new ForbiddenException('Only Organization Owners and Admins can manage employees');
+        if (!allowed) {
+            throw new ForbiddenException('You do not have permission to manage employees in this organization');
         }
     }
 
@@ -319,16 +322,16 @@ export class EmployeesService {
             }
 
             // 3. Audit trail
-            // await tx.auditLog.create({
-            //     data: {
-            //         orgId,
-            //         userId: callerUserId,
-            //         action: 'employee.profile_updated',
-            //         resourceType: 'user',
-            //         resourceId: targetUserId,
-            //         metadata: { changes: dto },
-            //     },
-            // });
+            await tx.auditLog.create({
+                data: {
+                    orgId,
+                    userId: callerUserId,
+                    action: 'employee.profile_updated',
+                    resourceType: 'user',
+                    resourceId: targetUserId,
+                    metadata: { changes: { ...dto } },
+                },
+            });
 
             return updatedUser;
         });

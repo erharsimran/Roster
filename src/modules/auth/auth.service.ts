@@ -152,65 +152,98 @@ export class AuthService {
             include: {
                 userRoles: {
                     include: {
-                  role: {
-                      include: {
-                          rolePermissions: {
-                              include: {
-                                  permission: true,
-                              },
-                          },
-                      },
-                  },
-              },
-          },
-          employeePositions: {
-              include: {
-                  position: true,
-              },
-          },
-      },
+                        role: {
+                            include: {
+                                rolePermissions: {
+                                    include: {
+                                        permission: true,
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                employeePositions: {
+                    include: {
+                        position: true,
+                    },
+                },
+            },
   });
 
        if (!user) {
            throw new NotFoundException('User profile not found');
        }
 
-       // 1. Locate organization scope
+        // 1. Check for organization-level role
        const orgRole = user.userRoles?.find(
            (ur) => String(ur.scopeType).toLowerCase() === 'organization',
        );
 
-       let orgId: string | null = orgRole?.scopeId ?? null;
+        let orgId: string | null = orgRole?.scopeId ?? null;
+        const locRole = user.userRoles?.find(
+            (ur) => String(ur.scopeType).toLowerCase() === 'location',
+        );
 
-       // 2. Fallback to location scope if needed
-       if (!orgId) {
-      const locRole = user.userRoles?.find(
-          (ur) => String(ur.scopeType).toLowerCase() === 'location',
-      );
-      if (locRole?.scopeId) {
-        const loc = await this.prisma.location.findUnique({
-            where: { id: locRole.scopeId },
-            select: { orgId: true },
-        });
-          if (loc) orgId = loc.orgId;
-      }
-  }
+        // 2. Fallback to location-level scope if no organization role exists
+        if (!orgId && locRole?.scopeId) {
+            const loc = await this.prisma.location.findUnique({
+                where: { id: locRole.scopeId },
+                select: { orgId: true },
+            });
+            if (loc) orgId = loc.orgId;
+        }
 
+        // 3. Fetch Organization and load its locations via the Prisma relation
        let organization: {
            id: string;
            name: string;
            timezone: string;
            createdAt: Date;
        } | null = null;
+        let locations: any[] = [];
 
        if (orgId) {
-           organization = await this.prisma.organization.findUnique({
+           const orgRecord = await this.prisma.organization.findUnique({
                where: { id: orgId },
-        select: { id: true, name: true, timezone: true, createdAt: true },
+               select: {
+                   id: true,
+                   name: true,
+                   timezone: true,
+                   createdAt: true,
+                   locations: { // Direct Prisma relation query
+                       select: {
+                           id: true,
+                           name: true,
+                           timezone: true,
+                           address: true,
+                           latitude: true,
+                           longitude: true,
+                           geofenceRadiusMeters: true,
+                       },
+                       orderBy: { name: 'asc' },
+                   },
+               },
     });
+
+           if (orgRecord) {
+               organization = {
+                   id: orgRecord.id,
+                   name: orgRecord.name,
+                   timezone: orgRecord.timezone,
+                   createdAt: orgRecord.createdAt,
+               };
+
+               // Scope locations: if user is strictly tied to a location role and not org-wide, restrict view
+               if (!orgRole && locRole?.scopeId) {
+                   locations = orgRecord.locations.filter((l) => l.id === locRole.scopeId);
+               } else {
+                   locations = orgRecord.locations;
+               }
+           }
   }
 
-       // 3. Extract unique permissions (empty array for brand new accounts)
+        // 4. Extract and deduplicate permission keys[cite: 2]
        const permissionSet = new Set<string>();
        user.userRoles?.forEach((ur) => {
            ur.role?.rolePermissions?.forEach((rp) => {
@@ -220,17 +253,20 @@ export class AuthService {
            });
        });
 
-       const activeRole =
-           orgRole?.role?.name ?? user.userRoles?.[0]?.role?.name ?? 'Employee';
-
+        const activeUserRole = orgRole ?? user.userRoles?.[0];
+        const activeRoleName = activeUserRole?.role?.name ?? 'Employee';
+        console.log(locations)
        return {
            id: user.id,
            email: user.email,
            fullName: user.fullName,
            phone: user.phone,
            orgId,
-      role: activeRole,
-      organization,
+           role: activeRoleName,
+           scopeType: activeUserRole?.scopeType ?? 'organization',
+           scopeId: activeUserRole?.scopeId ?? orgId,
+           organization,
+           locations, 
            permissions: Array.from(permissionSet),
            positions: user.employeePositions?.map((ep) => ep.position) ?? [],
        };

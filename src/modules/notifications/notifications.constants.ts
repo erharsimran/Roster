@@ -5,6 +5,8 @@ export enum NotificationJobType {
     SHIFT_TRADE_REQUESTED = 'shift.trade_requested',
     SHIFT_TRADE_RESOLVED = 'shift.trade_resolved',
     UPCOMING_SHIFT_REMINDER = 'shift.reminder',
+    TIME_OFF_REQUESTED = 'timeoff.requested',
+    TIME_OFF_REVIEWED = 'timeoff.reviewed',
 }
 
 export interface RosterPublishedJobPayload {
@@ -36,4 +38,20 @@ export interface ShiftReminderJobPayload {
     userId: string;
     startTime: string;
     locationName: string;
+}
+
+export interface TimeOffRequestedJobPayload {
+    requestId: string;
+    userId: string;
+    locationId: string;
+    locationName: string;
+    startDate: string;
+    endDate: string;
+}
+
+export interface TimeOffReviewedJobPayload {
+    requestId: string;
+    userId: string;
+    status: 'approved' | 'denied';
+    reason?: string;
 }

@@ -1,31 +1,11 @@
 import { PrismaClient } from '@prisma/client';
+import { PERMISSIONS, DEFAULT_ROLE_PERMISSIONS } from '../src/common/constants/permissions.constants';
 const prisma = new PrismaClient();
 
-const PERMISSIONS = [
-  'schedule:view',
-  'schedule:create',
-  'schedule:edit',
-  'schedule:publish',
-  'shift:swap_approve',
-  'timesheet:view',
-  'timesheet:approve',
-  'timesheet:edit_manual',
-  'reports:view',
-  'reports:export',
-  'employee:manage',
-  'location:manage',
-];
-
-const ROLE_PERMISSIONS: Record<string, string[]> = {
-  Owner: PERMISSIONS, // gets everything — see design note on skipping inheritance graphs
-  Admin: PERMISSIONS,
-  Manager: [
-    'schedule:view', 'schedule:create', 'schedule:edit', 'schedule:publish',
-    'shift:swap_approve', 'timesheet:view', 'timesheet:approve',
-    'timesheet:edit_manual', 'reports:view', 'employee:manage',
-  ],
-  Employee: ['schedule:view', 'timesheet:view'],
-};
+// Permission keys and role grants now come from the same file organization.service.ts
+// uses for real org bootstrap — previously this list used different key names
+// ('schedule:view' vs 'shifts:read') and would have silently diverged.
+const ROLE_PERMISSIONS = DEFAULT_ROLE_PERMISSIONS;
 
 async function main() {
   const org = await prisma.organization.upsert({

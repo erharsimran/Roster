@@ -18,6 +18,8 @@ import {
 } from './dto/schedule-grid.dto';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { RealtimeEvent } from '../realtime/realtime.constants';
+import { PermissionService } from '../../common/services/permission.service';
+import { PermissionKey } from '../../common/constants/permissions.constants';
 
 interface TimeInterval {
     start: number;
@@ -38,33 +40,38 @@ export class SchedulingGridService {
 
     constructor(
         private readonly prisma: PrismaService,
+        private readonly permissionService: PermissionService,
         private readonly realtimeGateway: RealtimeGateway,
     ) { }
 
-    private async assertLocationAccess(userId: string, locationId: string) {
+    /**
+     * This module had its own duplicate copy of assertLocationAccess (a second
+     * one lives in scheduling.service.ts). Previously it only checked that ANY
+     * role existed at the location/org, then separately derived `isManager`
+     * from a hardcoded role-name array — meaning a custom role with
+     * 'shifts:write' granted via organization-roles would still be treated as
+     * a non-manager here. Now both the base access check and `isManager` are
+     * driven by real permissions.
+     */
+    private async assertLocationAccess(
+        userId: string,
+        locationId: string,
+        permission: PermissionKey = 'shifts:read',
+    ) {
         const location = await this.prisma.location.findUnique({
             where: { id: locationId },
         });
 
         if (!location) throw new NotFoundException('Location not found');
 
-        const callerRole = await this.prisma.userRole.findFirst({
-            where: {
-                userId,
-                OR: [
-                    { scopeType: 'organization', scopeId: location.orgId },
-                    { scopeType: 'location', scopeId: location.id },
-                ],
-            },
-            include: { role: true },
-        });
+        const scope = { scopeType: 'location' as const, scopeId: location.id };
 
-        if (!callerRole) throw new ForbiddenException('No access to this location schedule');
+        const allowed = await this.permissionService.can(userId, permission, scope);
+        if (!allowed) throw new ForbiddenException(`Missing permission "${permission}" for this location`);
 
-        return {
-            location,
-            isManager: ['Owner', 'Admin', 'Manager'].includes(callerRole.role.name),
-        };
+        const isManager = await this.permissionService.can(userId, 'shifts:write', scope);
+
+        return { location, isManager };
     }
 
     /**
@@ -162,7 +169,9 @@ export class SchedulingGridService {
     }
 
     async updateOperatingHours(userId: string, locationId: string, dto: UpdateLocationOperatingHoursDto) {
-        const { location } = await this.assertLocationAccess(userId, locationId);
+        // Previously used the default (any-access) check — meant any Employee
+        // could change store hours. Now requires 'locations:manage'.
+        const { location } = await this.assertLocationAccess(userId, locationId, 'locations:manage');
 
         return this.prisma.location.update({
             where: { id: locationId },
@@ -310,7 +319,7 @@ export class SchedulingGridService {
     }
 
     async quickDrop(callerUserId: string, locationId: string, dto: QuickDropShiftDto) {
-        const { location } = await this.assertLocationAccess(callerUserId, locationId);
+        const { location } = await this.assertLocationAccess(callerUserId, locationId, 'shifts:write');
         const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
         const dateObj = new Date(dto.date + 'T00:00:00Z');
         const dayOfWeek = dayNames[dateObj.getUTCDay()];
@@ -377,7 +386,7 @@ export class SchedulingGridService {
         });
 
         if (!shift) throw new NotFoundException('Shift not found');
-        await this.assertLocationAccess(callerUserId, shift.locationId);
+        await this.assertLocationAccess(callerUserId, shift.locationId, 'shifts:write');
 
         const start = new Date(dto.newStartTime);
         const end = new Date(dto.newEndTime);
@@ -442,7 +451,7 @@ export class SchedulingGridService {
         });
 
         if (!original) throw new NotFoundException('Source shift not found');
-        await this.assertLocationAccess(callerUserId, original.locationId);
+        await this.assertLocationAccess(callerUserId, original.locationId, 'shifts:write');
 
         const start = new Date(dto.newStartTime);
         const end = new Date(dto.newEndTime);

@@ -7,24 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { SetupOrgDto } from './dto/setup-org.dto';
-
-// Canonical permissions required for the platform to operate
-const CORE_PERMISSIONS = [
-  'org:manage',
-  'locations:manage',
-  'roles:manage',
-  'users:manage',
-  'positions:manage',
-  'shifts:read',
-  'shifts:write',
-  'shifts:publish',
-  'shifts:claim',
-  'shifts:swap_approve',
-  'time:clock_in_out',
-  'time:manage_entries',
-  'time:approve_timesheets',
-  'reports:read',
-];
+import { PERMISSIONS, DEFAULT_ROLE_PERMISSIONS } from '../../common/constants/permissions.constants';
 
 @Injectable()
 export class OrganizationService {
@@ -80,8 +63,8 @@ export class OrganizationService {
             },
           });
 
-          // 5. Ensure all core permissions exist in the database
-          for (const permKey of CORE_PERMISSIONS) {
+          // 5. Ensure all canonical permissions exist in the database
+          for (const permKey of PERMISSIONS) {
             await tx.permission.upsert({
               where: { key: permKey },
               update: {},
@@ -92,6 +75,7 @@ export class OrganizationService {
           const allPermissions = await tx.permission.findMany({
             select: { id: true, key: true },
           });
+          const permissionIdByKey = new Map(allPermissions.map((p) => [p.key, p.id]));
 
           // 6. Provision standard system roles for this Organization
           const rolesToCreate = [
@@ -113,14 +97,17 @@ export class OrganizationService {
             roleMap.set(r.name, role.id);
           }
 
-          // 7. Bind all system permissions to Owner and Admin
-          const ownerRoleId = roleMap.get('Owner')!;
-          const adminRoleId = roleMap.get('Admin')!;
-
-          const rolePermissionEntries = allPermissions.flatMap((perm) => [
-            { roleId: ownerRoleId, permissionId: perm.id },
-            { roleId: adminRoleId, permissionId: perm.id },
-          ]);
+          // 7. Bind each system role's default permission set (see
+          // DEFAULT_ROLE_PERMISSIONS — previously only Owner/Admin were bound
+          // here, leaving Manager and Employee with zero permissions).
+          const rolePermissionEntries = rolesToCreate.flatMap((r) => {
+            const roleId = roleMap.get(r.name)!;
+            const grantedKeys = DEFAULT_ROLE_PERMISSIONS[r.name] ?? [];
+            return grantedKeys.map((key) => ({
+              roleId,
+              permissionId: permissionIdByKey.get(key)!,
+            }));
+          });
 
           await tx.rolePermission.createMany({
             data: rolePermissionEntries,
@@ -131,7 +118,7 @@ export class OrganizationService {
           const userRole = await tx.userRole.create({
             data: {
               userId: user.id,
-              roleId: ownerRoleId,
+              roleId: roleMap.get('Owner')!,
               scopeType: 'organization',
               scopeId: org.id,
             },

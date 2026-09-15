@@ -94,6 +94,198 @@
         ]
       }
     },
+    "/organizations/{orgId}/roles/permissions": {
+      "get": {
+        "operationId": "OrganizationRolesController_listPermissions",
+        "summary": "List all system permissions",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of platform capability keys"
+          }
+        },
+        "tags": [
+          "Organization Roles & Permissions"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/organizations/{orgId}/roles": {
+      "get": {
+        "operationId": "OrganizationRolesController_listOrgRoles",
+        "summary": "List all roles, assigned permissions, and audit metadata",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of roles scoped to the organization"
+          }
+        },
+        "tags": [
+          "Organization Roles & Permissions"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "OrganizationRolesController_createRole",
+        "summary": "Create a custom role scoped to this organization",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Role successfully created"
+          },
+          "409": {
+            "description": "Role name already exists within this organization"
+          }
+        },
+        "tags": [
+          "Organization Roles & Permissions"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/organizations/{orgId}/roles/{roleId}": {
+      "patch": {
+        "operationId": "OrganizationRolesController_updateRole",
+        "summary": "Update role name or permissions with audit trail",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "roleId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Role updated successfully"
+          },
+          "403": {
+            "description": "Cannot mutate system roles or owner permissions"
+          },
+          "404": {
+            "description": "Role not found"
+          }
+        },
+        "tags": [
+          "Organization Roles & Permissions"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "OrganizationRolesController_deleteRole",
+        "summary": "Delete a role if unused by active employees",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "roleId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Role deleted"
+          },
+          "400": {
+            "description": "Active employees are still assigned to this role"
+          },
+          "403": {
+            "description": "System preset roles cannot be deleted"
+          }
+        },
+        "tags": [
+          "Organization Roles & Permissions"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
     "/positions": {
       "post": {
         "operationId": "PositionsController_create",
@@ -1028,6 +1220,164 @@
         ]
       }
     },
+    "/time-off": {
+      "post": {
+        "operationId": "TimeOffController_createRequest",
+        "summary": "Request time off",
+        "description": "Creates a pending time-off request for the authenticated employee at a given location.",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTimeOffRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Request created."
+          },
+          "409": {
+            "description": "Overlaps an existing pending/approved request."
+          }
+        },
+        "tags": [
+          "Time Off"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/time-off/me": {
+      "get": {
+        "operationId": "TimeOffController_listMine",
+        "summary": "List my time-off requests",
+        "description": "Returns the authenticated employee's own time-off history, newest first.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Time Off"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/time-off/{requestId}": {
+      "delete": {
+        "operationId": "TimeOffController_cancelRequest",
+        "summary": "Cancel a pending request",
+        "description": "Withdraws a request the employee made themselves, only while it is still pending.",
+        "parameters": [
+          {
+            "name": "requestId",
+            "required": true,
+            "in": "path",
+            "description": "TimeOffRequest UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Time Off"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/time-off/locations/{locationId}/pending": {
+      "get": {
+        "operationId": "TimeOffController_getPendingForLocation",
+        "summary": "List pending time-off requests for a location",
+        "description": "Manager-facing queue of requests awaiting review at this location.",
+        "parameters": [
+          {
+            "name": "locationId",
+            "required": true,
+            "in": "path",
+            "description": "Location UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Time Off"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/time-off/{requestId}/review": {
+      "put": {
+        "operationId": "TimeOffController_reviewRequest",
+        "summary": "Approve or deny a time-off request",
+        "description": "Manager review action; records an audit log entry and notifies the requesting employee.",
+        "parameters": [
+          {
+            "name": "requestId",
+            "required": true,
+            "in": "path",
+            "description": "TimeOffRequest UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewTimeOffDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Time Off"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
     "/time-tracking/locations/{locationId}/coordinates": {
       "put": {
         "operationId": "TimeTrackingController_setLocationCoordinates",
@@ -1396,6 +1746,185 @@
           }
         ]
       }
+    },
+    "/organizations/{orgId}/locations": {
+      "get": {
+        "operationId": "LocationsController_listByOrg",
+        "summary": "List all store locations for an organization",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "description": "Organization UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of locations with punch and shift counts"
+          }
+        },
+        "tags": [
+          "Store Locations"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "LocationsController_create",
+        "summary": "Create a new branch location for an organization",
+        "parameters": [
+          {
+            "name": "orgId",
+            "required": true,
+            "in": "path",
+            "description": "Organization UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLocationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Location created successfully"
+          },
+          "409": {
+            "description": "Location name already exists in organization"
+          }
+        },
+        "tags": [
+          "Store Locations"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/locations/{locationId}": {
+      "get": {
+        "operationId": "LocationsController_findById",
+        "summary": "Get details for a specific location",
+        "parameters": [
+          {
+            "name": "locationId",
+            "required": true,
+            "in": "path",
+            "description": "Location UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Location details"
+          },
+          "404": {
+            "description": "Location not found"
+          }
+        },
+        "tags": [
+          "Store Locations"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "LocationsController_update",
+        "summary": "Update branch settings, operating hours, or geofencing",
+        "parameters": [
+          {
+            "name": "locationId",
+            "required": true,
+            "in": "path",
+            "description": "Location UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateLocationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Location updated successfully"
+          },
+          "404": {
+            "description": "Location not found"
+          }
+        },
+        "tags": [
+          "Store Locations"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "LocationsController_remove",
+        "summary": "Delete an unused location",
+        "parameters": [
+          {
+            "name": "locationId",
+            "required": true,
+            "in": "path",
+            "description": "Location UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Location deleted successfully"
+          },
+          "400": {
+            "description": "Location has active shifts or punches"
+          },
+          "404": {
+            "description": "Location not found"
+          }
+        },
+        "tags": [
+          "Store Locations"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
     }
   },
   "info": {
@@ -1446,6 +1975,54 @@
           "organizationName",
           "primaryLocationName"
         ]
+      },
+      "CreateRoleDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Shift Supervisor",
+            "description": "Unique role name within the organization"
+          },
+          "permissionIds": {
+            "example": [
+              1,
+              2,
+              5
+            ],
+            "description": "List of permission IDs to grant to this role",
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateRoleDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Lead Floor Supervisor",
+            "description": "Updated role name"
+          },
+          "permissionIds": {
+            "example": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "description": "Updated list of permission IDs to synchronize with this role",
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        }
       },
       "CreatePositionDto": {
         "type": "object",
@@ -1886,6 +2463,55 @@
           "action"
         ]
       },
+      "CreateTimeOffRequestDto": {
+        "type": "object",
+        "properties": {
+          "locationId": {
+            "type": "string",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "description": "Location this request applies to"
+          },
+          "startDate": {
+            "type": "string",
+            "example": "2026-10-01",
+            "description": "First day off (inclusive), YYYY-MM-DD"
+          },
+          "endDate": {
+            "type": "string",
+            "example": "2026-10-03",
+            "description": "Last day off (inclusive), YYYY-MM-DD"
+          },
+          "reason": {
+            "type": "string",
+            "example": "Family wedding out of town"
+          }
+        },
+        "required": [
+          "locationId",
+          "startDate",
+          "endDate"
+        ]
+      },
+      "ReviewTimeOffDto": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "approve",
+              "deny"
+            ],
+            "example": "approve"
+          },
+          "reason": {
+            "type": "string",
+            "example": "Approved - coverage confirmed"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
       "SetLocationCoordinatesDto": {
         "type": "object",
         "properties": {
@@ -1966,6 +2592,168 @@
           "latitude",
           "longitude"
         ]
+      },
+      "CreateLocationDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Downtown Hub",
+            "description": "Store branch label"
+          },
+          "timezone": {
+            "type": "string",
+            "example": "America/Toronto",
+            "description": "IANA Timezone string"
+          },
+          "address": {
+            "type": "string",
+            "example": "123 King St W, Toronto, ON"
+          },
+          "latitude": {
+            "type": "number",
+            "example": 43.6532
+          },
+          "longitude": {
+            "type": "number",
+            "example": -79.3832
+          },
+          "geofenceRadiusMeters": {
+            "type": "number",
+            "example": 150,
+            "default": 150,
+            "description": "Geofence radius in meters"
+          },
+          "operatingHours": {
+            "type": "object",
+            "description": "Weekly operating hours schedule",
+            "example": {
+              "monday": {
+                "isOpen": true,
+                "open": "08:00",
+                "close": "22:00"
+              },
+              "tuesday": {
+                "isOpen": true,
+                "open": "08:00",
+                "close": "22:00"
+              },
+              "wednesday": {
+                "isOpen": true,
+                "open": "08:00",
+                "close": "22:00"
+              },
+              "thursday": {
+                "isOpen": true,
+                "open": "08:00",
+                "close": "22:00"
+              },
+              "friday": {
+                "isOpen": true,
+                "open": "08:00",
+                "close": "23:00"
+              },
+              "saturday": {
+                "isOpen": true,
+                "open": "09:00",
+                "close": "23:00"
+              },
+              "sunday": {
+                "isOpen": true,
+                "open": "10:00",
+                "close": "20:00"
+              }
+            }
+          },
+          "requireLeadershipOnDuty": {
+            "type": "boolean",
+            "example": false,
+            "default": false
+          }
+        },
+        "required": [
+          "name",
+          "timezone"
+        ]
+      },
+      "UpdateLocationDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Downtown Hub",
+            "description": "Store branch label"
+          },
+          "timezone": {
+            "type": "string",
+            "example": "America/Toronto",
+            "description": "IANA Timezone string"
+          },
+          "address": {
+            "type": "string",
+            "example": "123 King St W, Toronto, ON"
+          },
+          "latitude": {
+            "type": "number",
+            "example": 43.6532
+          },
+          "longitude": {
+            "type": "number",
+            "example": -79.3832
+          },
+          "geofenceRadiusMeters": {
+            "type": "number",
+            "example": 150,
+            "default": 150,
+            "description": "Geofence radius in meters"
+          },
+          "operatingHours": {
+            "type": "object",
+            "description": "Weekly operating hours schedule",
+            "example": {
+              "monday": {
+                "isOpen": true,
+                "open": "08:00",
+                "close": "22:00"
+              },
+              "tuesday": {
+                "isOpen": true,
+                "open": "08:00",
+                "close": "22:00"
+              },
+              "wednesday": {
+                "isOpen": true,
+                "open": "08:00",
+                "close": "22:00"
+              },
+              "thursday": {
+                "isOpen": true,
+                "open": "08:00",
+                "close": "22:00"
+              },
+              "friday": {
+                "isOpen": true,
+                "open": "08:00",
+                "close": "23:00"
+              },
+              "saturday": {
+                "isOpen": true,
+                "open": "09:00",
+                "close": "23:00"
+              },
+              "sunday": {
+                "isOpen": true,
+                "open": "10:00",
+                "close": "20:00"
+              }
+            }
+          },
+          "requireLeadershipOnDuty": {
+            "type": "boolean",
+            "example": false,
+            "default": false
+          }
+        }
       }
     }
   }

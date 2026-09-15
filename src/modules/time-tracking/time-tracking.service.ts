@@ -8,13 +8,40 @@ import {
     Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
+import { PermissionService } from '../../common/services/permission.service';
 import { ClockInDto, ClockOutDto, SetLocationCoordinatesDto } from './dto/time-tracking.dto';
 
 @Injectable()
 export class TimeTrackingService {
     private readonly logger = new Logger(TimeTrackingService.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly permissionService: PermissionService,
+    ) { }
+
+    /**
+     * Shared check for manager-facing timesheet actions (view/approve).
+     * getTimesheetsByLocation and approveTimeEntry previously had NO access
+     * check at all — any authenticated user, from any organization, could
+     * view or approve any location's time entries. This closes that gap.
+     */
+    private async assertTimesheetAccess(userId: string, locationId: string) {
+        const location = await this.prisma.location.findUnique({
+            where: { id: locationId },
+            select: { id: true, orgId: true },
+        });
+        if (!location) throw new NotFoundException('Location not found');
+
+        const allowed = await this.permissionService.can(userId, 'time:approve_timesheets', {
+            scopeType: 'location',
+            scopeId: location.id,
+        });
+        if (!allowed) {
+            throw new ForbiddenException('Insufficient permissions to view or approve timesheets for this location');
+        }
+        return location;
+    }
 
     /**
      * Calculates surface distance in meters between two GPS coordinates using Haversine formula.
@@ -44,18 +71,12 @@ export class TimeTrackingService {
 
         if (!location) throw new NotFoundException('Location not found');
 
-        const role = await this.prisma.userRole.findFirst({
-            where: {
-                userId: managerUserId,
-                OR: [
-                    { scopeType: 'organization', scopeId: location.orgId },
-                    { scopeType: 'location', scopeId: location.id },
-                ],
-            },
-            include: { role: true },
+        const allowed = await this.permissionService.can(managerUserId, 'locations:manage', {
+            scopeType: 'location',
+            scopeId: location.id,
         });
 
-        if (!role || !['Owner', 'Admin', 'Manager'].includes(role.role.name)) {
+        if (!allowed) {
             throw new ForbiddenException('Insufficient permissions to modify location coordinates');
         }
 
@@ -220,12 +241,7 @@ export class TimeTrackingService {
      * 4. MANAGER TIMESHEET AUDIT & APPROVAL
      */
     async getTimesheetsByLocation(managerUserId: string, locationId: string, startDate: string, endDate: string) {
-        const location = await this.prisma.location.findUnique({
-            where: { id: locationId },
-            select: { id: true, orgId: true, name: true },
-        });
-
-        if (!location) throw new NotFoundException('Location not found');
+        await this.assertTimesheetAccess(managerUserId, locationId);
 
         const entries = await this.prisma.timeEntry.findMany({
             where: {
@@ -272,6 +288,11 @@ export class TimeTrackingService {
         });
 
         if (!entry) throw new NotFoundException('Time entry not found');
+
+        // Previously this method never checked the caller had ANY relationship
+        // to the entry's org/location — any authenticated user could approve
+        // any time entry system-wide. Now scoped to the entry's actual location.
+        await this.assertTimesheetAccess(managerUserId, entry.locationId);
 
         return this.prisma.timeEntry.update({
             where: { id: entryId },

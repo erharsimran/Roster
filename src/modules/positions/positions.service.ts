@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
+import { PermissionService } from '../../common/services/permission.service';
 import { CreatePositionDto, UpdatePositionDto } from './dto/position.dto';
 import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
@@ -15,28 +16,26 @@ import { Decimal } from '@prisma/client/runtime/library';
 export class PositionsService {
   private readonly logger = new Logger(PositionsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissionService: PermissionService,
+  ) {}
 
   /**
-   * Validates that the caller has membership in the target organization.
+   * Validates the caller holds 'positions:manage' for the org. Previously
+   * this only checked that ANY org-scoped role existed — meaning a plain
+   * Employee could create/edit/delete positions org-wide. Fixed to gate on
+   * the actual permission via the shared PermissionService.
    */
   private async assertOrgAccess(userId: string, orgId: string) {
-    const userRole = await this.prisma.userRole.findFirst({
-      where: {
-        userId,
-        scopeId: orgId,
-        scopeType: 'organization',
-      },
-      include: {
-        role: true,
-      },
+    const allowed = await this.permissionService.can(userId, 'positions:manage', {
+      scopeType: 'organization',
+      scopeId: orgId,
     });
 
-    if (!userRole) {
-      throw new ForbiddenException('You do not have administrative access to this organization');
+    if (!allowed) {
+      throw new ForbiddenException('You do not have permission to manage positions in this organization');
     }
-
-    return userRole;
   }
 
   async create(userId: string, dto: CreatePositionDto) {

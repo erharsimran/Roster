@@ -8,6 +8,8 @@ import {
     ShiftTradeRequestedJobPayload,
     ShiftTradeResolvedJobPayload,
     ShiftReminderJobPayload,
+    TimeOffRequestedJobPayload,
+    TimeOffReviewedJobPayload,
 } from './notifications.constants';
 
 @Injectable()
@@ -75,6 +77,36 @@ export class NotificationsService {
             {
                 delay: Math.max(0, delayMs),
                 attempts: 2,
+                removeOnComplete: true,
+            },
+        );
+    }
+
+    /**
+     * Alerts location managers that a new time-off request needs review.
+     */
+    async queueTimeOffRequested(payload: TimeOffRequestedJobPayload) {
+        return this.notificationsQueue.add(
+            NotificationJobType.TIME_OFF_REQUESTED,
+            payload,
+            {
+                attempts: 3,
+                backoff: { type: 'exponential', delay: 1500 },
+                removeOnComplete: true,
+            },
+        );
+    }
+
+    /**
+     * Notifies the requesting employee once their time-off request has been approved/denied.
+     */
+    async queueTimeOffReviewed(payload: TimeOffReviewedJobPayload) {
+        return this.notificationsQueue.add(
+            NotificationJobType.TIME_OFF_REVIEWED,
+            payload,
+            {
+                attempts: 3,
+                backoff: { type: 'exponential', delay: 1500 },
                 removeOnComplete: true,
             },
         );
