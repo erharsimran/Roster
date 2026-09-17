@@ -2041,6 +2041,17 @@
             "type": "number",
             "example": 22.5,
             "description": "Default base hourly rate for this position"
+          },
+          "isLeadership": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether this position satisfies supervisory leadership requirements",
+            "default": false
+          },
+          "color": {
+            "type": "string",
+            "example": "#10b981",
+            "description": "Badge hex color for the position"
           }
         },
         "required": [
@@ -2060,6 +2071,17 @@
             "type": "number",
             "example": 22.5,
             "description": "Default base hourly rate for this position"
+          },
+          "isLeadership": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether this position satisfies supervisory leadership requirements",
+            "default": false
+          },
+          "color": {
+            "type": "string",
+            "example": "#10b981",
+            "description": "Badge hex color for the position"
           }
         }
       },

@@ -134,6 +134,7 @@ model Position {
   name         String
   hourlyRate   Decimal? @map("hourly_rate") @db.Decimal(10, 2)
   isLeadership Boolean  @default(false) @map("is_leadership")
+  color        String?
 
   organization      Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
   employeePositions EmployeePosition[]

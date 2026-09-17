@@ -9,7 +9,6 @@ import {
 import { PrismaService } from '../../prisma.service';
 import { PermissionService } from '../../common/services/permission.service';
 import { CreatePositionDto, UpdatePositionDto } from './dto/position.dto';
-import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 
 @Injectable()
@@ -21,12 +20,6 @@ export class PositionsService {
     private readonly permissionService: PermissionService,
   ) {}
 
-  /**
-   * Validates the caller holds 'positions:manage' for the org. Previously
-   * this only checked that ANY org-scoped role existed — meaning a plain
-   * Employee could create/edit/delete positions org-wide. Fixed to gate on
-   * the actual permission via the shared PermissionService.
-   */
   private async assertOrgAccess(userId: string, orgId: string) {
     const allowed = await this.permissionService.can(userId, 'positions:manage', {
       scopeType: 'organization',
@@ -41,7 +34,6 @@ export class PositionsService {
   async create(userId: string, dto: CreatePositionDto) {
     await this.assertOrgAccess(userId, dto.orgId);
 
-    // Enforce name uniqueness within the organization
     const existing = await this.prisma.position.findFirst({
       where: {
         orgId: dto.orgId,
@@ -60,6 +52,7 @@ export class PositionsService {
             orgId: dto.orgId,
             name: dto.name.trim(),
             hourlyRate: dto.hourlyRate !== undefined ? new Decimal(dto.hourlyRate) : null,
+            isLeadership: dto.isLeadership !== undefined ? Boolean(dto.isLeadership) : false,
           },
         });
 
@@ -73,6 +66,7 @@ export class PositionsService {
             metadata: {
               name: position.name,
               hourlyRate: position.hourlyRate?.toNumber() ?? null,
+              isLeadership: position.isLeadership,
             },
           },
         });
@@ -147,6 +141,10 @@ export class PositionsService {
               dto.hourlyRate !== undefined
                 ? new Decimal(dto.hourlyRate)
                 : undefined,
+            isLeadership:
+              dto.isLeadership !== undefined
+                ? Boolean(dto.isLeadership)
+                : undefined,
           },
         });
 
@@ -158,8 +156,16 @@ export class PositionsService {
             resourceType: 'position',
             resourceId: updated.id,
             metadata: {
-              previous: { name: position.name, hourlyRate: position.hourlyRate?.toNumber() },
-              updated: { name: updated.name, hourlyRate: updated.hourlyRate?.toNumber() },
+              previous: {
+                name: position.name,
+                hourlyRate: position.hourlyRate?.toNumber() ?? null,
+                isLeadership: position.isLeadership,
+              },
+              updated: {
+                name: updated.name,
+                hourlyRate: updated.hourlyRate?.toNumber() ?? null,
+                isLeadership: updated.isLeadership,
+              },
             },
           },
         });
@@ -168,7 +174,11 @@ export class PositionsService {
       });
     } catch (error: any) {
       this.logger.error(`Error updating position ${id}: ${error.message}`, error.stack);
-      if (error instanceof ConflictException || error instanceof ForbiddenException || error instanceof NotFoundException) {
+      if (
+        error instanceof ConflictException ||
+        error instanceof ForbiddenException ||
+        error instanceof NotFoundException
+      ) {
         throw error;
       }
       throw new InternalServerErrorException('Failed to update position');
@@ -178,7 +188,6 @@ export class PositionsService {
   async remove(userId: string, id: string) {
     const position = await this.findOne(userId, id);
 
-    // Prevent deletion if active shifts reference this position
     const activeShiftCount = await this.prisma.shift.count({
       where: {
         positionId: id,

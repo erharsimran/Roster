@@ -1,5 +1,6 @@
 import { ApiProperty, PartialType, OmitType } from '@nestjs/swagger';
 import {
+  IsBoolean,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -38,9 +39,29 @@ export class CreatePositionDto {
   @IsOptional()
   @Type(() => Number)
   hourlyRate?: number;
+
+  @ApiProperty({
+    example: true,
+    description: 'Whether this position satisfies supervisory leadership requirements',
+    required: false,
+    default: false,
+  })
+  @IsBoolean({ message: 'isLeadership must be a boolean' })
+  @IsOptional()
+  @Type(() => Boolean)
+  isLeadership?: boolean;
+
+  @ApiProperty({
+    example: '#10b981',
+    description: 'Badge hex color for the position',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  color?: string;
 }
 
-// Automatically makes name and hourlyRate optional while omitting orgId from update payloads
+// Automatically makes name, hourlyRate, isLeadership, and color optional while omitting orgId
 export class UpdatePositionDto extends PartialType(
   OmitType(CreatePositionDto, ['orgId'] as const),
 ) {}
