@@ -1,13 +1,41 @@
-import { Controller, Get, Req, Res, UseGuards } from '@nestjs/common';
+import {
+    Controller,
+    Get,
+    Post,
+    Body,
+    Req,
+    Res,
+    UseGuards,
+    HttpCode,
+    HttpStatus,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
+import {
+    ApiTags,
+    ApiOperation,
+    ApiBearerAuth,
+    ApiResponse,
+} from '@nestjs/swagger';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
+import { LoginDto } from './dto/login.dto';
 
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
     constructor(private readonly authService: AuthService) { }
+
+    @Post('login')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({
+        summary: 'Standard email and password login',
+        description: 'Authenticates system user or admin and returns a signed JWT bearer token.',
+    })
+    @ApiResponse({ status: 200, description: 'Authenticated successfully; returns session token.' })
+    @ApiResponse({ status: 401, description: 'Invalid email or password.' })
+    async login(@Body() dto: LoginDto) {
+        return this.authService.login(dto);
+    }
 
     @Get('google')
     @UseGuards(AuthGuard('google'))
@@ -23,19 +51,19 @@ export class AuthController {
     @UseGuards(AuthGuard('google'))
     @ApiOperation({
         summary: 'Google OAuth callback handler',
-      description: 'Receives Google callback code, creates/links user, and redirects to web app.',
+        description: 'Receives Google callback code, creates/links user, and redirects to web app.',
   })
   @ApiResponse({ status: 302, description: 'Redirects to frontend auth callback.' })
   async googleAuthRedirect(@Req() req: any, @Res() res: Response) {
-        try {
-            const { accessToken } = req.user;
+      try {
+          const { accessToken } = req.user;
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
-          return res.redirect(`${frontendUrl}/auth/callback?token=${accessToken}`);
-      } catch (error) {
-          console.error('OAuth redirect processing failed:', error);
-          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
-          return res.redirect(`${frontendUrl}/login?error=oauth_failed`);
-      }
+        return res.redirect(`${frontendUrl}/auth/callback?token=${accessToken}`);
+    } catch (error) {
+        console.error('OAuth redirect processing failed:', error);
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+        return res.redirect(`${frontendUrl}/login?error=oauth_failed`);
+    }
   }
 
     @Get('me')
@@ -45,10 +73,9 @@ export class AuthController {
         summary: 'Current User Identity',
         description: 'Protected test route to verify your JWT token in Swagger.',
     })
-    getProfile(@Req() req: any) {
-        const userId = req.user.sub || req.user.id || req.user.userId;
-        return this.authService.getMe(userId);
-    }
-
-
+  @ApiResponse({ status: 200, description: 'Current authenticated user profile and roles.' })
+  getProfile(@Req() req: any) {
+      const userId = req.user.sub || req.user.id || req.user.userId;
+      return this.authService.getMe(userId);
+  }
 }

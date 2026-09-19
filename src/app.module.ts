@@ -15,6 +15,8 @@ import { CronModule } from './modules/cron/cron.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { CommonModule } from './common/common.module';
 import { LocationsModule } from './modules/locations/locations.module';
+import { InvitationsModule } from './modules/invitations/invitations.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -34,6 +36,7 @@ import { LocationsModule } from './modules/locations/locations.module';
     CronModule,
     RealtimeModule,
     LocationsModule,
+    InvitationsModule
   ],
   controllers: [],
   providers: [PrismaService],

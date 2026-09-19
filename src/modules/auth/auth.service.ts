@@ -1,276 +1,223 @@
 import {
     Injectable,
-    InternalServerErrorException,
-    NotFoundException,
+    UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../prisma.service';
-import { ScopeType } from '@prisma/client';
+import { LoginDto } from './dto/login.dto';
+import * as bcrypt from 'bcrypt';
 
-interface GoogleUserPayload {
-    googleId: string;
+export interface GoogleAuthPayload {
     email: string;
-    fullName: string;
+    googleId?: string;
+    firstName?: string;
+    lastName?: string;
+    fullName?: string;
+    picture?: string;
+    avatarUrl?: string;
+    [key: string]: any;
 }
 
 @Injectable()
-export class AuthService { 
+export class AuthService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly jwtService: JwtService,
-    ) { }
+  ) { }
 
-    async getUserSessionProfile(userId: string) {
-        const user = await this.prisma.user.findUnique({
-            where: { id: userId },
+    async validateGoogleUser(details: GoogleAuthPayload) {
+        const email = details.email.toLowerCase().trim();
+        const fullName =
+            details.fullName ||
+            [details.firstName, details.lastName].filter(Boolean).join(' ') ||
+            email.split('@')[0];
+
+        // 1. Locate existing user by googleId or email
+        let user = await this.prisma.user.findFirst({
+            where: {
+                OR: [
+                    ...(details.googleId ? [{ googleId: details.googleId }] : []),
+                    { email },
+                ],
+            },
             include: {
                 userRoles: {
                     include: {
                         role: true,
                     },
                 },
-                employeePositions: {
+        },
+    });
+
+      // 2. Link googleId if missing or create user
+      if (user) {
+          if (details.googleId && !user.googleId) {
+              user = await this.prisma.user.update({
+                  where: { id: user.id },
+                  data: { googleId: details.googleId },
+                  include: {
+                userRoles: {
                     include: {
-                        position: true,
+                        role: true,
+                    },
+                },
+            },
+        });
+      }
+    } else {
+        user = await this.prisma.user.create({
+            data: {
+                email,
+                fullName,
+                googleId: details.googleId || null,
+            },
+          include: {
+              userRoles: {
+                  include: {
+                      role: true,
+                  },
+              },
+          },
+      });
+    }
+
+      // 3. Resolve primary role and scope
+      const primaryAssignment = user.userRoles?.[0];
+      const roleName =
+          primaryAssignment?.role?.name ??
+          ((user as any).isSuperAdmin ? 'MasterAdmin' : 'Member');
+      const orgId =
+          primaryAssignment?.scopeType === 'organization'
+              ? primaryAssignment.scopeId
+              : null;
+
+      // 4. Issue JWT access token
+      const payload = {
+          sub: user.id,
+          email: user.email,
+          fullName: user.fullName,
+          isSuperAdmin: (user as any).isSuperAdmin ?? false,
+          orgId,
+          role: roleName,
+      };
+
+      const accessToken = this.jwtService.sign(payload);
+
+      return {
+        accessToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.fullName,
+              isSuperAdmin: (user as any).isSuperAdmin ?? false,
+              orgId,
+              role: roleName,
+          },
+      };
+  }
+
+    async login(dto: LoginDto) {
+        const email = dto.email.toLowerCase().trim();
+
+        const user = await this.prisma.user.findUnique({
+            where: { email },
+            include: {
+                userRoles: {
+                    include: {
+                        role: true,
                     },
                 },
             },
         });
 
-        if (!user) {
-            throw new NotFoundException('User profile not found');
-        }
+      if (!user || !user.passwordHash) {
+          throw new UnauthorizedException('Invalid email or password');
+      }
 
-        // 1. Locate organization scope from user roles
-        const orgRole = user.userRoles.find(
-            (ur) => ur.scopeType === 'organization'
-        );
+      const isValid = await bcrypt.compare(dto.password, user.passwordHash);
+      if (!isValid) {
+          throw new UnauthorizedException('Invalid email or password');
+      }
 
-        let organization: { id: string; name: string; createdAt: Date } | null = null;
+      const primaryAssignment = user.userRoles[0];
+      const roleName =
+          primaryAssignment?.role?.name ??
+          ((user as any).isSuperAdmin ? 'MasterAdmin' : 'Member');
+      const orgId =
+          primaryAssignment?.scopeType === 'organization'
+              ? primaryAssignment.scopeId
+              : null;
 
-        if (orgRole?.scopeId) {
-            organization = await this.prisma.organization.findUnique({
-                where: { id: orgRole.scopeId },
-                select: {
-                    id: true,
-                    name: true,
-                    createdAt: true,
-                },
-            });
-        }
+      const payload = {
+          sub: user.id,
+          email: user.email,
+          fullName: user.fullName,
+          isSuperAdmin: (user as any).isSuperAdmin ?? false,
+          orgId,
+          role: roleName,
+      };
 
-        // Fallback check: If the role is scoped to a LOCATION, resolve the parent organization
-        if (!organization) {
-            const locationRole = user.userRoles.find(
-                (ur) => ur.scopeType === 'location'
-            );
-
-            if (locationRole?.scopeId) {
-                const location = await this.prisma.location.findUnique({
-                    where: { id: locationRole.scopeId },
-                    select: {
-                        organization: {
-                            select: {
-                                id: true,
-                                name: true,
-                                createdAt: true,
-                            },
-                        },
-                    },
-                });
-                if (location?.organization) {
-                    organization = location.organization;
-                }
-            }
-        }
-
-        // 2. Determine highest role name (prioritizing Org-level leadership)
-        const primaryRole = orgRole?.role?.name || user.userRoles[0]?.role?.name || 'Employee';
-
-        // 3. Extract flattened positions
-        const positions = user.employeePositions.map((ep) => ep.position);
-
-        return {
+      return {
+        accessToken: this.jwtService.sign(payload),
+        user: {
             id: user.id,
             email: user.email,
             fullName: user.fullName,
-            phone: user.phone,
-            role: primaryRole,
-            orgId: organization?.id ?? null,
-            organization,
-            positions,
-        };
-    }
+            isSuperAdmin: (user as any).isSuperAdmin ?? false,
+            orgId,
+            role: roleName,
+        },
+    };
+  }
 
-    async validateGoogleUser(details: GoogleUserPayload) {
-        try {
-            let user = await this.prisma.user.findFirst({
-                where: {
-                    OR: [{ googleId: details.googleId }, { email: details.email }],
-                },
-            });
-
-            if (user && !user.googleId) {
-                user = await this.prisma.user.update({
-                    where: { id: user.id },
-                    data: { googleId: details.googleId },
-                });
-            }
-
-            if (!user) {
-                user = await this.prisma.user.create({
-                    data: {
-                        email: details.email,
-                        fullName: details.fullName,
-                        googleId: details.googleId,
-                    },
-                });
-            }
-
-            const fullProfile = await this.getUserSessionProfile(user.id);
-
-            const tokenPayload = {
-                sub: fullProfile.id,
-                email: fullProfile.email,
-                orgId: fullProfile.orgId,
-                role: fullProfile.role,
-            };
-
-            return {
-                accessToken: this.jwtService.sign(tokenPayload),
-                user: fullProfile,
-            };
-        } catch (error) {
-            console.error('--- GOOGLE AUTH ERROR DETAILS ---', error);
-            if (error instanceof NotFoundException) throw error;
-            throw new InternalServerErrorException('Error authenticating with Google');
-        }
-    }
     async getMe(userId: string) {
         const user = await this.prisma.user.findUnique({
             where: { id: userId },
-            include: {
-                userRoles: {
-                    include: {
-                        role: {
-                            include: {
-                                rolePermissions: {
-                                    include: {
-                                        permission: true,
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-                employeePositions: {
-                    include: {
-                        position: true,
+        select: {
+            id: true,
+            email: true,
+            fullName: true,
+            phone: true,
+            isSuperAdmin: true,
+            createdAt: true,
+            userRoles: {
+            select: {
+                scopeType: true,
+                scopeId: true,
+                role: {
+                select: {
+                    id: true,
+                    name: true,
+                    rolePermissions: {
+                              select: {
+                                  permission: {
+                                      select: { key: true },
+                                  },
+                              },
+                          },
+                      },
+                  },
+              },
+          },
+          employeePositions: {
+            select: {
+                position: {
+                    select: {
+                        id: true,
+                        name: true,
+                      isLeadership: true,
+                      color: true,
+                  },
                     },
                 },
             },
-  });
-
-       if (!user) {
-           throw new NotFoundException('User profile not found');
-       }
-
-        // 1. Check for organization-level role
-       const orgRole = user.userRoles?.find(
-           (ur) => String(ur.scopeType).toLowerCase() === 'organization',
-       );
-
-        let orgId: string | null = orgRole?.scopeId ?? null;
-        const locRole = user.userRoles?.find(
-            (ur) => String(ur.scopeType).toLowerCase() === 'location',
-        );
-
-        // 2. Fallback to location-level scope if no organization role exists
-        if (!orgId && locRole?.scopeId) {
-            const loc = await this.prisma.location.findUnique({
-                where: { id: locRole.scopeId },
-                select: { orgId: true },
-            });
-            if (loc) orgId = loc.orgId;
-        }
-
-        // 3. Fetch Organization and load its locations via the Prisma relation
-       let organization: {
-           id: string;
-           name: string;
-           timezone: string;
-           createdAt: Date;
-       } | null = null;
-        let locations: any[] = [];
-
-       if (orgId) {
-           const orgRecord = await this.prisma.organization.findUnique({
-               where: { id: orgId },
-               select: {
-                   id: true,
-                   name: true,
-                   timezone: true,
-                   createdAt: true,
-                   locations: { // Direct Prisma relation query
-                       select: {
-                           id: true,
-                           name: true,
-                           timezone: true,
-                           address: true,
-                           latitude: true,
-                           longitude: true,
-                           geofenceRadiusMeters: true,
-                       },
-                       orderBy: { name: 'asc' },
-                   },
-               },
+        },
     });
 
-           if (orgRecord) {
-               organization = {
-                   id: orgRecord.id,
-                   name: orgRecord.name,
-                   timezone: orgRecord.timezone,
-                   createdAt: orgRecord.createdAt,
-               };
+      if (!user) {
+          throw new UnauthorizedException('User no longer exists');
+      }
 
-               // Scope locations: if user is strictly tied to a location role and not org-wide, restrict view
-               if (!orgRole && locRole?.scopeId) {
-                   locations = orgRecord.locations.filter((l) => l.id === locRole.scopeId);
-               } else {
-                   locations = orgRecord.locations;
-               }
-           }
+      return user;
   }
-
-        // 4. Extract and deduplicate permission keys[cite: 2]
-       const permissionSet = new Set<string>();
-       user.userRoles?.forEach((ur) => {
-           ur.role?.rolePermissions?.forEach((rp) => {
-               if (rp.permission?.key) {
-                   permissionSet.add(rp.permission.key);
-               }
-           });
-       });
-
-        const activeUserRole = orgRole ?? user.userRoles?.[0];
-        const activeRoleName = activeUserRole?.role?.name ?? 'Employee';
-        console.log(locations)
-       return {
-           id: user.id,
-           email: user.email,
-           fullName: user.fullName,
-           phone: user.phone,
-           orgId,
-           role: activeRoleName,
-           scopeType: activeUserRole?.scopeType ?? 'organization',
-           scopeId: activeUserRole?.scopeId ?? orgId,
-           organization,
-           locations, 
-           permissions: Array.from(permissionSet),
-           positions: user.employeePositions?.map((ep) => ep.position) ?? [],
-       };
-   }
-
 }
-

@@ -55,6 +55,7 @@ model User {
   googleId     String?  @unique @map("google_id")
   fullName     String   @map("full_name")
   phone        String?
+  isSuperAdmin Boolean  @default(false) @map("is_super_admin")
   createdAt    DateTime @default(now()) @map("created_at")
 
   userRoles         UserRole[]
@@ -66,6 +67,7 @@ model User {
   receivedTrades    ShiftTrade[]       @relation("TradeTargetUser")
   timeOffRequests   TimeOffRequest[]
   rolesUpdated      Role[]             @relation("RoleLastUpdatedBy")
+  sentInvitations   Invitation[]       @relation("SentInvitations")
 
   @@map("users")
 }
@@ -106,6 +108,7 @@ model RolePermission {
 }
 
 enum ScopeType {
+  system
   organization
   location
 }
@@ -334,4 +337,42 @@ model TimeEntry {
   @@index([locationId, clockIn])
   @@index([userId, status])
   @@map("time_entries")
+}
+
+enum InvitationType {
+  PLATFORM_ORG_OWNER // Master Admin invites a prospective business owner
+  TENANT_MEMBER // Org Owner/Manager invites an employee
+}
+
+enum InvitationStatus {
+  pending
+  accepted
+  expired
+  revoked
+}
+
+model Invitation {
+  id     String           @id @default(uuid())
+  email  String
+  token  String           @unique
+  type   InvitationType
+  status InvitationStatus @default(pending)
+
+  // Scoping (null for PLATFORM_ORG_OWNER)
+  orgId       String?    @map("org_id")
+  roleName    String?    @map("role_name") // Role to grant upon acceptance
+  scopeType   ScopeType? @map("scope_type")
+  scopeId     String?    @map("scope_id")
+  positionIds String[]   @default([]) @map("position_ids")
+
+  invitedById String @map("invited_by_id")
+  invitedBy   User   @relation("SentInvitations", fields: [invitedById], references: [id], onDelete: Cascade)
+
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([token])
+  @@index([email])
+  @@map("invitations")
 }
