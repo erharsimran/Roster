@@ -3,52 +3,63 @@ import {
     ConflictException,
     Logger,
     InternalServerErrorException,
+    BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { CreateOrgOwnerInviteDto } from '../invitations/dto/invitation.dto';
+import { getFrontendUrl } from '../../common/config/app-urls.config';
+import { NotificationsService } from '../notifications/notifications.service';
+
 import * as crypto from 'crypto';
 
 @Injectable()
 export class PlatformService {
     private readonly logger = new Logger(PlatformService.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(private readonly prisma: PrismaService, private readonly notificationsService: NotificationsService) { }
 
-    async inviteOrgOwner(userId: string, dto: CreateOrgOwnerInviteDto) {
-        const email = dto.email.toLowerCase().trim();
-
-        const existingUser = await this.prisma.user.findUnique({ where: { email } });
-        if (existingUser) {
-            throw new ConflictException(`User with email "${email}" already exists`);
+    async inviteOrgOwner(
+        dto: { email: string; organizationName?: string },
+        invitedById?: string,
+    ) {
+        if (!invitedById) {
+            throw new BadRequestException('Inviter ID could not be identified from the current authentication session.');
         }
 
+        const email = dto.email.toLowerCase().trim();
         const token = crypto.randomBytes(32).toString('hex');
         const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 Days
 
-        try {
-            const invitation = await this.prisma.invitation.create({
-                data: {
-                    email,
-                    token,
-                    type: 'PLATFORM_ORG_OWNER',
-                    status: 'pending',
-                    invitedById: userId,
-                    expiresAt,
-                },
-            });
+        // 1. Create DB invitation record
+        const invitation = await this.prisma.invitation.create({
+            data: {
+                email,
+                token,
+                type: 'PLATFORM_ORG_OWNER',
+                status: 'pending',
+              invitedById,
+              expiresAt,
+          },
+      });
 
-            const inviteLink = `${process.env.APP_FRONTEND_URL || 'http://localhost:3000'}/onboarding/claim?token=${token}`;
+        // 2. Build claim URL
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+        const claimUrl = `${frontendUrl}/onboarding/claim?token=${invitation.token}`;
 
-            return {
-                id: invitation.id,
-                email: invitation.email,
-                inviteLink,
-                expiresAt: invitation.expiresAt,
-            };
-        } catch (error: any) {
-            this.logger.error(`Failed to create platform invite: ${error.message}`, error.stack);
-            throw new InternalServerErrorException('Failed to create platform invite');
-        }
+        // 3. Push to BullMQ queue
+        await this.notificationsService.queueInvitationEmail({
+            email,
+            organizationName: dto.organizationName,
+            claimUrl,
+            type: 'PLATFORM_ORG_OWNER',
+        });
+
+        return {
+          success: true,
+          message: 'Platform invitation issued successfully',
+          invitationId: invitation.id,
+          claimUrl,
+      };
     }
 
     async listAllOrganizations() {
